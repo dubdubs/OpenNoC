@@ -74,3 +74,5 @@
 ./tb/tb_snf.v
 ./tb/tb_snf_sram.v
 ./tb/tb_rni.sv
+./tb/tb_snf_top.sv
+./tb/tb_hni_top.sv

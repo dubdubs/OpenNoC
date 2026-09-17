@@ -1,0 +1,2 @@
+chi_rni_defines.svh
+chi_rni_opennoc_profile_shim.sv

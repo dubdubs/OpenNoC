@@ -1,0 +1,3 @@
+chi_rni_defines.svh
+chi_rni_segburst.sv
+tb_chi_rni_segburst.sv
