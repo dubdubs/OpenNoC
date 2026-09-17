@@ -33,7 +33,14 @@
     parameter RNI_AR_ENTRIES_NUM_PARAM   = 32,  \
     parameter RNI_AW_ENTRIES_NUM_PARAM   = 32,  \
     parameter HNF_NID_PARAM              = 0,   \
-    parameter RNI_NID_PARAM              = 6    )
+    parameter RNI_NID_PARAM              = 6,   \
+    parameter ENABLE_NONCOHERENT_PARAM   = 1,   \
+    parameter ENABLE_COHERENT_REQ_PARAM  = 1,   \
+    parameter ENABLE_POLICY_CSR_PARAM    = 0,   \
+    parameter DEFAULT_COHERENT_PARAM     = 1,   \
+    parameter POLICY_REGION_COUNT_PARAM  = 4,   \
+    parameter POLICY_REQUESTER_WIDTH_PARAM = 8, \
+    parameter LINE_HAZARD_ENTRIES_PARAM  = 64   )
 
 `define RNI_PARAM_INST #( \
     .AXI4_PA_WIDTH_PARAM            (AXI4_PA_WIDTH_PARAM         ), \
@@ -51,6 +58,13 @@
     .RNI_AR_ENTRIES_NUM_PARAM       (RNI_AR_ENTRIES_NUM_PARAM    ), \
     .RNI_AW_ENTRIES_NUM_PARAM       (RNI_AW_ENTRIES_NUM_PARAM    ), \
     .HNF_NID_PARAM                  (HNF_NID_PARAM               ), \
-    .RNI_NID_PARAM                  (RNI_NID_PARAM               ))
+    .RNI_NID_PARAM                  (RNI_NID_PARAM               ), \
+    .ENABLE_NONCOHERENT_PARAM       (ENABLE_NONCOHERENT_PARAM    ), \
+    .ENABLE_COHERENT_REQ_PARAM      (ENABLE_COHERENT_REQ_PARAM   ), \
+    .ENABLE_POLICY_CSR_PARAM        (ENABLE_POLICY_CSR_PARAM     ), \
+    .DEFAULT_COHERENT_PARAM         (DEFAULT_COHERENT_PARAM      ), \
+    .POLICY_REGION_COUNT_PARAM      (POLICY_REGION_COUNT_PARAM   ), \
+    .POLICY_REQUESTER_WIDTH_PARAM   (POLICY_REQUESTER_WIDTH_PARAM), \
+    .LINE_HAZARD_ENTRIES_PARAM      (LINE_HAZARD_ENTRIES_PARAM   ))
 
 `endif
