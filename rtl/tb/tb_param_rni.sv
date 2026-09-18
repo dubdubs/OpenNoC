@@ -310,6 +310,39 @@ module tb_param_rni;
     end
   endtask
 
+  // Partial byte enables must propagate through the write buffer and still
+  // complete the DBID/DAT/Comp sequence.  The default 128-bit data-plane is
+  // exercised here; non-default width data paths remain contract-only until
+  // their scatter/gather implementation is completed.
+  task automatic issue_partial_write(
+      input logic [AXI_ID_WIDTH-1:0] id,
+      input logic [ADDR_WIDTH-1:0] addr,
+      input logic [2:0] size,
+      input logic [1:0] burst,
+      input logic [AXI_DATA_WIDTH / 8-1:0] strobe
+  );
+    begin
+      @(negedge clk);
+      awid = id;
+      awaddr = addr;
+      awlen = 8'd0;
+      awsize = size;
+      awburst = burst;
+      awcache = 4'b1111;
+      awvalid = 1'b1;
+      do @(posedge clk); while (!awready);
+      @(negedge clk);
+      awvalid = 1'b0;
+      wdata = 128'h89ab_cdef_0123_4567_7654_3210_fedc_ba98;
+      wstrb = strobe;
+      wlast = 1'b1;
+      wvalid = 1'b1;
+      do @(posedge clk); while (!wready);
+      @(negedge clk);
+      wvalid = 1'b0;
+    end
+  endtask
+
   initial begin
     clk = 1'b0;
     rst = 1'b1;
@@ -427,11 +460,26 @@ module tb_param_rni;
       failure_count = failure_count + 1;
     end
 
+    write_seen = 1'b0;
+    txdat_seen = 1'b0;
+    issue_partial_write(11'h024, 44'h0000_0000_2080, 3'd4, 2'b01,
+                        16'b1010_0101_0000_1111);
+    wait (write_seen);
+    send_rsp(write_txnid, 12'h157, `CHIE_DBIDRESP);
+    wait (txdat_seen);
+    send_rsp(write_txnid, 12'h157, `CHIE_COMP);
+    wait (bvalid);
+    if (bid != 11'h024 || bresp != 2'b00) begin
+      $error("Partial-WSTRB AXI write completion mismatch: BID=%h BRESP=%h",
+             bid, bresp);
+      failure_count = failure_count + 1;
+    end
+
     repeat (4) @(posedge clk);
     if (failure_count != 0) begin
       $fatal(1, "tb_param_rni failed with %0d mismatches", failure_count);
     end
-    $display("tb_param_rni PASS: coherent read/write, DBID/DAT/Comp, V2 TxnID");
+    $display("tb_param_rni PASS: coherent read/write, partial WSTRB, DBID/DAT/Comp, V2 TxnID");
     $finish;
   end
 

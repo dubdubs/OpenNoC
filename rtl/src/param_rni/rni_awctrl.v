@@ -1446,7 +1446,12 @@ module rni_awctrl `RNI_PARAM
 
     always@* begin
         aw_txrspflit_info_r[`CHIE_RSP_FLIT_WIDTH-1:0] = {`CHIE_RSP_FLIT_WIDTH{1'b0}};
-        aw_txrspflit_info_r[`CHIE_RSP_FLIT_TGTID_RANGE] = aw_tx_send_nid_w[CHIE_NID_WIDTH_PARAM-1:0];
+        for (i=0; i < RNI_AW_ENTRIES_NUM_PARAM; i=i+1) begin
+            aw_txrspflit_info_r[`CHIE_RSP_FLIT_TGTID_RANGE] =
+                aw_txrspflit_info_r[`CHIE_RSP_FLIT_TGTID_RANGE] |
+                ({`CHIE_RSP_FLIT_TGTID_WIDTH{txrsp_select_ptr_q[i]}} &
+                 rxrsp_dbidresp_srcid_q[i][`CHIE_RSP_FLIT_SRCID_WIDTH-1:0]);
+        end
         aw_txrspflit_info_r[`CHIE_RSP_FLIT_SRCID_RANGE] = RNI_NID_PARAM;
         aw_txrspflit_info_r[`CHIE_RSP_FLIT_TXNID_RANGE] = aw_txrsp_txnid_r[`CHIE_RSP_FLIT_TXNID_WIDTH-1:0];
         aw_txrspflit_info_r[`CHIE_RSP_FLIT_OPCODE_RANGE] = `CHIE_COMPACK;

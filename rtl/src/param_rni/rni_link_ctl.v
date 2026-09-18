@@ -168,6 +168,7 @@ module rni_link_ctl `RNI_PARAM
     wire                                   rxcrd_en;
     wire                                   txdatflit_lcrd_v;
     wire                                   txrspflit_lcrd_v;
+    wire                                   txdatflit_send_d3_w;
     wire                                   txreqflit_lcrd_v;
 
     // internal reg
@@ -396,19 +397,22 @@ module rni_link_ctl `RNI_PARAM
                       .clk               ( clk_i                  )
                       ,.rst               ( rst_i                  )
                       ,.lcrd_inc          ( TXDATLCRDV             ) // TXDATLCRDV -> txdatlcrdv_q ?
-                      ,.lcrd_dec          ( wb_txdatflit_sent_d3_o )
+                      ,.lcrd_dec          ( txdatflit_send_d3_w     )
                       ,.lcrd_full         (                        )
                       ,.lcrd_avail        ( txdat_lcrd_avail_d3_w  )
                   );
 
-    assign wb_txdatflit_sent_d3_o = (wb_txdatflitv_d3_i & txdat_lcrd_avail_d3_w & ~lcrd_return_en & txll_st_run) | txdatflit_lcrd_v;
-    assign txdatflitv_en_w = wb_txdatflit_sent_d3_o | txdatflitv_d4_q;
+    assign wb_txdatflit_sent_d3_o = wb_txdatflitv_d3_i &
+                                     txdat_lcrd_avail_d3_w &
+                                     ~lcrd_return_en & txll_st_run;
+    assign txdatflit_send_d3_w = wb_txdatflit_sent_d3_o | txdatflit_lcrd_v;
+    assign txdatflitv_en_w = txdatflit_send_d3_w | txdatflitv_d4_q;
 
     always @(posedge clk_i or posedge rst_i) begin
         if (rst_i == 1'b1)
             txdatflitv_d4_q <= 1'b0;
         else if (txdatflitv_en_w == 1'b1)
-            txdatflitv_d4_q <= wb_txdatflit_sent_d3_o;
+            txdatflitv_d4_q <= txdatflit_send_d3_w;
     end
 
     assign TXDATFLITV = txdatflitv_d4_q;
@@ -418,7 +422,7 @@ module rni_link_ctl `RNI_PARAM
     always @(posedge clk_i or posedge rst_i) begin
         if (rst_i == 1'b1)
             txdatflit_d4_q <= {`CHIE_DAT_FLIT_WIDTH{1'b0}};
-        else if (wb_txdatflit_sent_d3_o == 1'b1)
+        else if (txdatflit_send_d3_w == 1'b1)
             txdatflit_d4_q <= txdatflit_d3_w;
     end
 
@@ -459,8 +463,12 @@ module rni_link_ctl `RNI_PARAM
                       ,.sel_index         (                        )
                   );
 
-    assign aw_txrspflit_sent_d0_o = (ax_txrspflit_sel_d0_w & aw_txrspflitv_d0_i & txrsp_lcrd_avail_d0_w & ~lcrd_return_en & txll_st_run) | txrspflit_lcrd_v;
-    assign ax_txrspflit_sent_d0_w = aw_txrspflit_sent_d0_o;
+    assign aw_txrspflit_sent_d0_o = ax_txrspflit_sel_d0_w &
+                                     aw_txrspflitv_d0_i &
+                                     txrsp_lcrd_avail_d0_w &
+                                     ~lcrd_return_en & txll_st_run;
+    assign ax_txrspflit_sent_d0_w = aw_txrspflit_sent_d0_o |
+                                    txrspflit_lcrd_v;
 
     assign txrspflitv_en_w = ax_txrspflit_sent_d0_w | txrspflitv_d1_q;
 

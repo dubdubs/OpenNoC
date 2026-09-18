@@ -226,6 +226,20 @@ module rni `RNI_PARAM
     output wire                                 POLICYCSRSECURITYEVENT;
     output wire [7:0]                           POLICYEPOCH;
 
+    // The legacy data buffers are functionally complete only for the default
+    // 128-bit AXI / 256-bit CHI data plane.  Keep the broader parameter
+    // contract visible in rni_scheme1_static_assert, but fail elaboration of
+    // the real datapath instead of silently corrupting non-default traffic.
+    initial begin
+        if (AXI4_AXDATA_WIDTH_PARAM != 128)
+            $fatal(1, "param_rni: functional AXI data width is currently limited to 128 bits");
+        if (CHIE_DATA_WIDTH_PARAM != 256 || CHIE_BE_WIDTH_PARAM != 32)
+            $fatal(1, "param_rni: functional CHI DAT/BE widths are currently limited to 256/32 bits");
+        if (RNI_AR_ENTRIES_NUM_PARAM > (1 << (`CHIE_REQ_FLIT_TXNID_WIDTH - 2)) ||
+            RNI_AW_ENTRIES_NUM_PARAM > (1 << (`CHIE_REQ_FLIT_TXNID_WIDTH - 2)))
+            $fatal(1, "param_rni: entry count exceeds the Scheme-1 TxnID slot capacity");
+    end
+
     // wire
     wire [`AXI4_AW_WIDTH-1:0]                   AW_CH_S0;
     wire [`AXI4_W_WIDTH-1:0]                    W_CH_S0;

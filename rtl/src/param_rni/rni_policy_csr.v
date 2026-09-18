@@ -82,6 +82,13 @@ module rni_policy_csr #(
             if ((shadow_allowed_profiles[i] != 2'b00) &&
                 (shadow_limit[i] <= shadow_base[i]))
                 shadow_invalid = 1'b1;
+            if ((shadow_allowed_profiles[i][0] && !ENABLE_NONCOHERENT) ||
+                (shadow_allowed_profiles[i][1] && !ENABLE_COHERENT_REQ))
+                shadow_invalid = 1'b1;
+            if ((shadow_allowed_profiles[i] != 2'b00) &&
+                (shadow_default_coherent[i] ? !shadow_allowed_profiles[i][1] :
+                                              !shadow_allowed_profiles[i][0]))
+                shadow_invalid = 1'b1;
             for (j = i + 1; j < REGION_COUNT; j = j + 1)
                 if ((shadow_allowed_profiles[i] != 2'b00) &&
                     (shadow_allowed_profiles[j] != 2'b00) &&
@@ -109,7 +116,8 @@ module rni_policy_csr #(
                     (ar_intent_valid_i && active_allow_intent[i]) ?
                     ar_coherent_intent_i : active_default_coherent[i];
                 ar_allow_o = ar_profile_coherent_o ?
-                    active_allowed_profiles[i][1] : active_allowed_profiles[i][0];
+                    (active_allowed_profiles[i][1] && ENABLE_COHERENT_REQ) :
+                    (active_allowed_profiles[i][0] && ENABLE_NONCOHERENT);
             end
         end
     end
@@ -132,7 +140,8 @@ module rni_policy_csr #(
                     (aw_intent_valid_i && active_allow_intent[i]) ?
                     aw_coherent_intent_i : active_default_coherent[i];
                 aw_allow_o = aw_profile_coherent_o ?
-                    active_allowed_profiles[i][1] : active_allowed_profiles[i][0];
+                    (active_allowed_profiles[i][1] && ENABLE_COHERENT_REQ) :
+                    (active_allowed_profiles[i][0] && ENABLE_NONCOHERENT);
             end
         end
     end
@@ -165,13 +174,14 @@ module rni_policy_csr #(
                 active_ns_only[i] <= 1'b0;
             end
         end else begin
-            csr_commit_busy_o <= 1'b0;
+            csr_commit_busy_o <= commit_pending_q && !outstanding_empty_i;
             csr_commit_error_o <= 1'b0;
             if (csr_security_event_clear_i && csr_secure_i)
                 security_event_o <= 1'b0;
             if (ENABLE_POLICY_CSR && (csr_write_i || csr_commit_i || csr_lock_i) && !csr_secure_i)
                 security_event_o <= 1'b1;
-            if (ENABLE_POLICY_CSR && csr_write_i && csr_secure_i && !csr_locked_o) begin
+            if (ENABLE_POLICY_CSR && csr_write_i && csr_secure_i &&
+                !csr_locked_o && !commit_pending_q) begin
                 shadow_base[csr_index_i] <= csr_base_i;
                 shadow_limit[csr_index_i] <= csr_limit_i;
                 shadow_requester_value[csr_index_i] <= csr_requester_value_i;
@@ -181,9 +191,13 @@ module rni_policy_csr #(
                 shadow_allow_intent[csr_index_i] <= csr_allow_intent_i;
                 shadow_ns_only[csr_index_i] <= csr_ns_only_i;
             end
+            if (ENABLE_POLICY_CSR && commit_pending_q && csr_secure_i &&
+                (csr_write_i || csr_commit_i))
+                csr_commit_error_o <= 1'b1;
             if (ENABLE_POLICY_CSR && csr_lock_i && csr_secure_i)
                 csr_locked_o <= 1'b1;
-            if (ENABLE_POLICY_CSR && csr_commit_i && csr_secure_i && !csr_locked_o) begin
+            if (ENABLE_POLICY_CSR && csr_commit_i && csr_secure_i &&
+                !csr_locked_o && !commit_pending_q) begin
                 if (shadow_invalid) begin
                     csr_commit_error_o <= 1'b1;
                 end else begin
