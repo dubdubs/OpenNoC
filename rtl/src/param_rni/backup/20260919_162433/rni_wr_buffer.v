@@ -29,7 +29,6 @@ module rni_wr_buffer `RNI_PARAM
         // AW new request allocate
         ,aw_alloc_valid_s2_i
         ,aw_alloc_entry_s2_i
-        ,aw_alloc_last_s2_i
         ,aw_ctmask_s2_i
         ,aw_pdmask_s2_i
         ,aw_bc_vec_s2_i
@@ -40,7 +39,6 @@ module rni_wr_buffer `RNI_PARAM
         // AW misc
         ,wb_req_fifo_pfull_d1_o
         ,wb_req_done_d3_o
-        ,wb_req_error_d3_o
         ,wb_req_entry_d3_o
 
         // AW txdatflit fields
@@ -88,7 +86,6 @@ module rni_wr_buffer `RNI_PARAM
     // request allocate
     input  wire                                                     aw_alloc_valid_s2_i;
     input  wire [RNI_AW_ENTRIES_NUM_PARAM-1:0]                      aw_alloc_entry_s2_i;
-    input  wire                                                     aw_alloc_last_s2_i;
     input  wire [`RNI_DMASK_CT_WIDTH-1:0]                           aw_ctmask_s2_i;
     input  wire [`RNI_DMASK_PD_WIDTH-1:0]                           aw_pdmask_s2_i;
     input  wire [`RNI_BCVEC_WIDTH-1:0]                              aw_bc_vec_s2_i;
@@ -99,9 +96,6 @@ module rni_wr_buffer `RNI_PARAM
     // misc
     output wire                                                     wb_req_fifo_pfull_d1_o;
     output wire                                                     wb_req_done_d3_o;
-    // Valid with wb_req_done_d3_o.  The one-hot entry is carried by the
-    // existing wb_req_entry_d3_o signal.
-    output wire                                                     wb_req_error_d3_o;
     output wire [RNI_AW_ENTRIES_NUM_PARAM-1:0]                      wb_req_entry_d3_o;
 
     // txdatflit request
@@ -158,7 +152,6 @@ module rni_wr_buffer `RNI_PARAM
     wire [`AW_REQ_FIFO_ENTRIES_WIDTH-1:0]                           aw_req_fifo_in_s2_w;
     wire [`AW_REQ_FIFO_ENTRIES_WIDTH-1:0]                           aw_req_fifo_out_s3_w;
     wire                                                            aw_req_fifo_empty_w;
-    wire                                                            aw_req_last_s3_w;
     wire [4-1:0]                                                    aw_req_fifo_count_w;
     wire [RNI_AW_ENTRIES_NUM_PARAM-1:0]                             aw_new_alloc_entry_s3_w;
     wire [`RNI_DMASK_CT_WIDTH-1:0]                                  aw_ctmask_s3_w;
@@ -166,7 +159,6 @@ module rni_wr_buffer `RNI_PARAM
     wire [`RNI_BCVEC_WIDTH-1:0]                                     aw_bc_vec_s3_w;
     wire [`RNI_DMASK_CT_WIDTH-1:0]                                  aw_fdmask_s3_w;
     wire                                                            wb_bank_done_w;
-    wire                                                            wb_wlast_drain_w;
     wire                                                            brsp_fifo_push_d2_w;
     wire [`BRSP_FIFO_ENTRIES_WIDTH-1:0]                             brsp_fifo_in_d2_w;
     wire [`BRSP_FIFO_ENTRIES_WIDTH-1:0]                             brsp_fifo_out_d3_w;
@@ -234,22 +226,6 @@ module rni_wr_buffer `RNI_PARAM
                   .count    (                       )
               );
 
-    sync_fifo #(
-                  .FIFO_ENTRIES_WIDTH ( 1 ),
-                  .FIFO_ENTRIES_DEPTH ( `AW_REQ_FIFO_ENTRIES_DEPTH ),
-                  .FIFO_BYP_ENABLE    ( 1'b0 )
-              ) aw_req_last_fifo (
-                  .clk      ( clk_i                    ),
-                  .rst      ( rst_i                    ),
-                  .push     ( aw_req_fifo_push_s2_w    ),
-                  .pop      ( aw_req_fifo_pop_w        ),
-                  .data_in  ( aw_alloc_last_s2_i       ),
-                  .data_out ( aw_req_last_s3_w         ),
-                  .empty    (                          ),
-                  .full     (                          ),
-                  .count    (                          )
-              );
-
     assign wd_fifo_pop_d0_w = rq_wd_rdy_w & ~wd_fifo_empty_d1_w;
     assign WREADY0 = ~wd_fifo_full_d1_w | wd_fifo_pop_d0_w;
     assign w_ch_d1_w = wd_fifo_out_d1_w;
@@ -301,7 +277,7 @@ module rni_wr_buffer `RNI_PARAM
 
     assign rq_wd_rdy_w = aw_req_avail_w & w_valid_d1_w;
 
-    rni_bcount_ctl `RNI_PARAM_INST
+    rni_bcount_ctl
         rni_bcount_ctl_p0 (
             .clk            ( clk_i               ),
             .rst            ( rst_i               ),
@@ -310,13 +286,9 @@ module rni_wr_buffer `RNI_PARAM
             .bcount_vec     ( aw_bc_vec_s3_w      ),
             .ctmask         ( aw_ctmask_s3_w      ),
             .pdmask         ( aw_pdmask_s3_w      ),
-            .wlast          ( w_last_d1_w         ),
-            .request_last   ( aw_req_last_s3_w    ),
             .fdmask         ( aw_fdmask_s3_w      ),
             .bk_done        ( wb_bank_done_w      ),
-            .rq_done        ( wb_req_done_d3_o    ),
-            .drain          ( wb_wlast_drain_w    ),
-            .protocol_error ( wb_req_error_d3_o   )
+            .rq_done        ( wb_req_done_d3_o    )
         );
 
     ////////////////////////////////////////////////////////
@@ -326,15 +298,12 @@ module rni_wr_buffer `RNI_PARAM
     generate
         // write entry
         for(entry = 0; entry < RNI_AW_ENTRIES_NUM_PARAM; entry = entry + 1)begin
-            assign wr_entry_d1_w[entry] = aw_new_alloc_entry_s3_w[entry] &
-                                           aw_req_avail_w & w_valid_d1_w &
-                                           ~wb_wlast_drain_w;
+            assign wr_entry_d1_w[entry] = aw_new_alloc_entry_s3_w[entry] & aw_req_avail_w & w_valid_d1_w;
         end
 
         //write bank
         for(bank = 0; bank < `WR_BUFFER_DATA_BANK_NUM; bank = bank + 1)begin
-            assign wr_bank_d1_w[bank] = aw_fdmask_s3_w[bank] & aw_req_avail_w &
-                                         w_valid_d1_w & ~wb_wlast_drain_w;
+            assign wr_bank_d1_w[bank] = aw_fdmask_s3_w[bank] & aw_req_avail_w & w_valid_d1_w;
         end
 
         for(entry = 0; entry < RNI_AW_ENTRIES_NUM_PARAM; entry = entry + 1)begin

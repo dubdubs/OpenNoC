@@ -19,7 +19,7 @@
 `include "axi4_defines.v"
 `include "chie_defines.v"
 
-module rni_bcount_ctl `RNI_PARAM
+module rni_bcount_ctl
     (
         // global input
         clk,
@@ -31,15 +31,11 @@ module rni_bcount_ctl `RNI_PARAM
         bcount_vec,
         ctmask,
         pdmask,
-        wlast,
-        request_last,
 
         // output
         fdmask,
         bk_done,
-        rq_done,
-        drain,
-        protocol_error
+        rq_done
     );
 
     // global input
@@ -52,15 +48,11 @@ module rni_bcount_ctl `RNI_PARAM
     input  wire [16-1:0]        bcount_vec;
     input  wire [4-1:0]         ctmask;
     input  wire [4-1:0]         pdmask;
-    input  wire                 wlast;
-    input  wire                 request_last;
 
     // output
     output wire [4-1:0]         fdmask;
     output wire                 bk_done;
     output wire                 rq_done;
-    output wire                 drain;
-    output wire                 protocol_error;
 
     // wire
     wire [4-1:0]                fdmask_nxt;
@@ -71,17 +63,11 @@ module rni_bcount_ctl `RNI_PARAM
     wire [4-1:0]                pdmask_nxt;
     wire                        fdmask_upd;
     wire                        pdmask_upd;
-    wire                        expected_done;
-    wire                        early_wlast;
-    wire                        late_wlast;
 
     // reg
     reg  [4-1:0]                fdmask_q;
     reg  [4-1:0]                bcount_q;
     reg  [4-1:0]                pdmask_q;
-    reg                         drain_q;
-    reg                         late_error_q;
-    reg                         abort_q;
 
     // main function
     // pdmask update
@@ -102,7 +88,7 @@ module rni_bcount_ctl `RNI_PARAM
            ({4{fdmask[0]}} & bcount_vec[3:0])   ;
 
     assign bcount_nxt = (bcount_q == {4{1'b0}})? bcount_int : (bcount_q - 1'b1);
-    assign bcount_upd = rq_valid & wd_valid & ~drain_q & ~abort_q;
+    assign bcount_upd = rq_valid & wd_valid;
 
     always @(posedge clk or posedge rst) begin
         if(rst == 1'b1)
@@ -113,45 +99,8 @@ module rni_bcount_ctl `RNI_PARAM
 
     assign bcount_zero = ((bcount_nxt == {4{1'b0}}) & (bcount_int != {4{1'b0}})) | (bcount_int == {4{1'b0}});
 
-    assign bk_done = rq_valid & wd_valid & bcount_zero & ~drain_q & ~abort_q;
-    assign expected_done = rq_valid & wd_valid & ~(|pdmask_nxt) & bk_done;
-    assign early_wlast = rq_valid & wd_valid & wlast &
-                         (~expected_done | ~request_last) &
-                         ~drain_q & ~abort_q;
-    assign late_wlast = expected_done & request_last & ~wlast;
-
-    // AXI has no WID, so a malformed burst must be consumed through its WLAST
-    // before the next queued AW is allowed to see W data.  An early WLAST ends
-    // the malformed request immediately; a missing WLAST enters drain mode.
-    assign rq_done = abort_q ? rq_valid :
-                     drain_q ? (rq_valid & wd_valid & wlast) :
-                     early_wlast ? 1'b1 :
-                     (expected_done & (~request_last | wlast));
-    assign drain = drain_q | abort_q;
-    assign protocol_error = rq_done & (early_wlast | late_error_q |
-                                       drain_q | abort_q);
-
-    always @(posedge clk or posedge rst) begin
-        if (rst == 1'b1) begin
-            drain_q <= 1'b0;
-            late_error_q <= 1'b0;
-            abort_q <= 1'b0;
-        end else begin
-            if (abort_q) begin
-                if (rq_valid && request_last)
-                    abort_q <= 1'b0;
-            end else if (early_wlast && !request_last) begin
-                abort_q <= 1'b1;
-            end
-            if (late_wlast) begin
-                drain_q <= 1'b1;
-                late_error_q <= 1'b1;
-            end else if (rq_done) begin
-                drain_q <= 1'b0;
-                late_error_q <= 1'b0;
-            end
-        end
-    end
+    assign bk_done = rq_valid & wd_valid & bcount_zero;
+    assign rq_done  = rq_valid & wd_valid & ~(|pdmask_nxt) & bk_done;
 
     // fdmask update
     assign fdmask_nxt = (rq_done)? {4{1'b0}} : {fdmask[2:0],fdmask[3]};

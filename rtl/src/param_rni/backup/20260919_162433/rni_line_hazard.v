@@ -21,14 +21,12 @@ module rni_line_hazard #(
     reg profile_q [0:ENTRIES-1];
     reg [OWNER_WIDTH-1:0] owner_q [0:ENTRIES-1];
     reg conflict;
-    reg owner_busy;
     reg free_found;
     integer free_index;
     integer i;
 
     always @* begin
         conflict = 1'b0;
-        owner_busy = 1'b0;
         free_found = 1'b0;
         free_index = 0;
         empty_o = 1'b1;
@@ -38,21 +36,12 @@ module rni_line_hazard #(
                 if ((line_q[i] == acquire_addr_i[ADDR_WIDTH-1:6]) &&
                     (profile_q[i] != acquire_profile_i))
                     conflict = 1'b1;
-                // The legacy top identifies a parent with {direction, AXI ID}.
-                // AXI permits more than one outstanding transaction with the
-                // same ID, so that key is not globally unique.  Until the
-                // controllers export their allocated entry/parent token,
-                // serialize reuse of this key.  This guarantees that a final
-                // R/B response releases exactly one live parent rather than
-                // accidentally releasing several same-ID transactions.
-                if (owner_q[i] == acquire_owner_i)
-                    owner_busy = 1'b1;
             end else if (!free_found) begin
                 free_found = 1'b1;
                 free_index = i;
             end
         end
-        acquire_ready_o = free_found && !conflict && !owner_busy;
+        acquire_ready_o = free_found && !conflict;
     end
 
     always @(posedge clk_i or posedge rst_i) begin

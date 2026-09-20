@@ -32,13 +32,6 @@ module rni_arctrl
             ,ar_profile_coherent_i
             ,ar_policy_epoch_i
             ,ar_outstanding_o
-            ,ar_deny_valid_i
-            ,ar_deny_ready_o
-            ,ar_deny_cmd_valid_o
-            ,ar_deny_cmd_ready_i
-            ,ar_deny_cmd_id_o
-            ,ar_deny_cmd_len_o
-            ,ar_deny_done_i
 
             // txreq outputs
             ,arctrl_txreqflitv_s4_o
@@ -53,15 +46,9 @@ module rni_arctrl
             ,rxdatflitv_d1_i
             ,rxdatflit_txnid_d1_i
             ,rxdatflit_dataid_d1_i
-            ,rxdat_opcode_valid_d1_i
-            ,rxdat_owner_valid_d1_o
-            ,rxdat_owner_error_d1_o
-            ,rxdat_owner_idx_d1_o
 
             // s0 rdata dispatch
             ,rp_fifo_acpt_d4_i
-            ,r_retire_valid_i
-            ,r_retire_idx_i
             ,arctrl_rb_valid_d4_o
             ,arctrl_rb_ctmask_d4_o
             ,arctrl_rb_rlast_d4_o
@@ -86,13 +73,6 @@ module rni_arctrl
     input  wire                                       ar_profile_coherent_i;
     input  wire [7:0]                                 ar_policy_epoch_i;
     output wire                                       ar_outstanding_o;
-    input  wire                                       ar_deny_valid_i;
-    output wire                                       ar_deny_ready_o;
-    output wire                                       ar_deny_cmd_valid_o;
-    input  wire                                       ar_deny_cmd_ready_i;
-    output wire [`AXI4_ARID_WIDTH-1:0]                ar_deny_cmd_id_o;
-    output wire [`AXI4_ARLEN_WIDTH-1:0]               ar_deny_cmd_len_o;
-    input  wire                                       ar_deny_done_i;
 
     output wire                                       arctrl_txreqflitv_s4_o;
     output wire [`CHIE_REQ_FLIT_WIDTH-1:0]            arctrl_txreqflit_s4_o;
@@ -101,17 +81,11 @@ module rni_arctrl
     input  wire                                       rxdatflitv_d1_i;
     input  wire [`CHIE_DAT_FLIT_TXNID_WIDTH-1:0]      rxdatflit_txnid_d1_i;
     input  wire [`CHIE_DAT_FLIT_DATAID_WIDTH-1:0]     rxdatflit_dataid_d1_i;
-    input  wire                                       rxdat_opcode_valid_d1_i;
-    output wire                                       rxdat_owner_valid_d1_o;
-    output wire                                       rxdat_owner_error_d1_o;
-    output wire [`RNI_AR_ENTRIES_WIDTH-1:0]           rxdat_owner_idx_d1_o;
 
     input  wire                                       rxrspflitv_d1_i;
     input  wire [`CHIE_RSP_FLIT_WIDTH-1:0]            rxrspflit_d1_i;
 
     input  wire                                       rp_fifo_acpt_d4_i;
-    input  wire                                       r_retire_valid_i;
-    input  wire [`RNI_AR_ENTRIES_WIDTH-1:0]           r_retire_idx_i;
     output wire                                       arctrl_rb_valid_d4_o;
     output wire [`RNI_DMASK_CT_WIDTH-1:0]             arctrl_rb_ctmask_d4_o;
     output wire                                       arctrl_rb_rlast_d4_o;
@@ -136,7 +110,6 @@ module rni_arctrl
     wire arlink_profile_coherent_w;
     wire [7:0] arlink_policy_epoch_w;
     wire arlink_pending_w;
-    wire arlink_ready_w;
     wire [RNI_AR_ENTRIES_NUM_PARAM-1:0] arctrl_alloc_ptr_s1_w;
     wire [RNI_AR_ENTRIES_NUM_PARAM-1:0] arctrl_entry_rdy_s1_w;
     wire [RNI_AR_ENTRIES_NUM_PARAM-1:0] arctrl_entry_v_ns_w;
@@ -192,13 +165,6 @@ module rni_arctrl
     wire [RNI_AR_ENTRIES_NUM_PARAM-1:0] arctrl_rdata_select_w;
     wire [RNI_AR_ENTRIES_NUM_PARAM-1:0] arctrl_entry_dealloc_vec_w;
     wire arctrl_entry_dealloc_v_w;
-    wire rxdat_slot_in_range_w;
-    wire rxdat_entry_active_w;
-    wire rxdat_profile_match_w;
-    wire rxdat_direction_read_w;
-    wire rxdat_state_match_w;
-    wire rxdat_dataid_legal_w;
-    wire rxdat_dataid_duplicate_w;
 
     reg arctrl_entry_full_r;
     reg [`AXI4_ARID_WIDTH-1:0] arctrl_arid_s2_r;
@@ -223,10 +189,6 @@ module rni_arctrl
     reg [`RNI_DMASK_LS_WIDTH-1:0] arctrl_rdat_lsmask_r;
     reg [`AXI4_ARID_WIDTH-1:0] arctrl_rdat_axid_r;
     reg [`RNI_BCVEC_WIDTH-1:0] arctrl_rdat_bcvec_r;
-    reg ar_deny_pending_q;
-    reg ar_deny_active_q;
-    reg [`AXI4_ARID_WIDTH-1:0] ar_deny_id_q;
-    reg [`AXI4_ARLEN_WIDTH-1:0] ar_deny_len_q;
 
     reg [`AXI4_AR_WIDTH-1:0] arctrl_entry_info_q[RNI_AR_ENTRIES_NUM_PARAM-1:0];
     reg arctrl_entry_profile_q[RNI_AR_ENTRIES_NUM_PARAM-1:0];
@@ -287,7 +249,7 @@ module rni_arctrl
                    ,.AR_CH_S0                      (AR_CH_S0               )
                    ,.profile_coherent_i            (ar_profile_coherent_i )
                    ,.policy_epoch_i                (ar_policy_epoch_i      )
-                   ,.ARREADY                       (arlink_ready_w          )
+                   ,.ARREADY                       (ARREADY0               )
                    ,.alloc_busy_s1_i               (alloc_busy_s1_w        )
                    ,.arlink_arbus_s1_o             (arlink_arbus_s1_w      )
                    ,.arlink_valid_s1_o             (arlink_valid_s1_w      )
@@ -301,70 +263,7 @@ module rni_arctrl
                    ,.arlink_pending_o              (arlink_pending_w       )
                );
 
-    assign ARREADY0 = arlink_ready_w && !ar_deny_pending_q &&
-        !ar_deny_active_q;
-    assign ar_outstanding_o = arlink_pending_w | (|arctrl_entry_v_q) |
-        ar_deny_pending_q | ar_deny_active_q;
-
-    /* Policy-denied requests form an AXI-only parent.  Admission is
-     * deliberately conservative: accept one only after all older AR work has
-     * retired, then block normal AR until its final DECERR beat handshakes. */
-    assign ar_deny_ready_o = !ar_deny_pending_q && !ar_deny_active_q &&
-        !arlink_pending_w && !(|arctrl_entry_v_q);
-    assign ar_deny_cmd_valid_o = ar_deny_pending_q;
-    assign ar_deny_cmd_id_o = ar_deny_id_q;
-    assign ar_deny_cmd_len_o = ar_deny_len_q;
-
-    always @(posedge clk_i or posedge rst_i) begin
-        if (rst_i) begin
-            ar_deny_pending_q <= 1'b0;
-            ar_deny_active_q <= 1'b0;
-            ar_deny_id_q <= {`AXI4_ARID_WIDTH{1'b0}};
-            ar_deny_len_q <= {`AXI4_ARLEN_WIDTH{1'b0}};
-        end else begin
-            if (ar_deny_valid_i && ar_deny_ready_o) begin
-                ar_deny_pending_q <= 1'b1;
-                ar_deny_active_q <= 1'b1;
-                ar_deny_id_q <= AR_CH_S0[`AXI4_ARID_RANGE];
-                ar_deny_len_q <= AR_CH_S0[`AXI4_ARLEN_RANGE];
-            end
-            if (ar_deny_cmd_valid_o && ar_deny_cmd_ready_i)
-                ar_deny_pending_q <= 1'b0;
-            if (ar_deny_done_i)
-                ar_deny_active_q <= 1'b0;
-        end
-    end
-
-    /* RXDAT ownership is checked with the complete Scheme-1 TxnID before the
-     * data buffer is allowed to update RAM.  The slot alone is never an
-     * ownership key.  The real datapath is currently guarded to CHI-256, for
-     * which DataID 00/10 identify the two DAT ordinals. */
-    assign rxdat_owner_idx_d1_o =
-        rxdatflit_txnid_d1_i[`RNI_AR_ENTRIES_WIDTH-1:0];
-    assign rxdat_slot_in_range_w =
-        (rxdat_owner_idx_d1_o < RNI_AR_ENTRIES_NUM_PARAM);
-    assign rxdat_entry_active_w = rxdat_slot_in_range_w &&
-        arctrl_entry_v_q[rxdat_owner_idx_d1_o];
-    assign rxdat_profile_match_w = rxdat_entry_active_w &&
-        (rxdatflit_txnid_d1_i[`CHIE_DAT_FLIT_TXNID_WIDTH-1] ==
-         arctrl_entry_profile_q[rxdat_owner_idx_d1_o]);
-    assign rxdat_direction_read_w =
-        !rxdatflit_txnid_d1_i[`CHIE_DAT_FLIT_TXNID_WIDTH-2];
-    assign rxdat_state_match_w = rxdat_entry_active_w &&
-        arctrl_entry_req_select_vec_q[rxdat_owner_idx_d1_o];
-    assign rxdat_dataid_legal_w = !rxdatflit_dataid_d1_i[0];
-    assign rxdat_dataid_duplicate_w = rxdat_entry_active_w &&
-        ((rxdatflit_dataid_d1_i == 2'b00 &&
-          |arctrl_entry_rvmask_q[rxdat_owner_idx_d1_o][1:0]) ||
-         (rxdatflit_dataid_d1_i == 2'b10 &&
-          |arctrl_entry_rvmask_q[rxdat_owner_idx_d1_o][3:2]));
-    assign rxdat_owner_valid_d1_o = rxdatflitv_d1_i &&
-        rxdat_entry_active_w && rxdat_profile_match_w &&
-        rxdat_direction_read_w && rxdat_state_match_w &&
-        rxdat_opcode_valid_d1_i && rxdat_dataid_legal_w &&
-        !rxdat_dataid_duplicate_w;
-    assign rxdat_owner_error_d1_o = rxdatflitv_d1_i &&
-        rxdat_entry_active_w && !rxdat_owner_valid_d1_o;
+    assign ar_outstanding_o = arlink_pending_w | (|arctrl_entry_v_q);
 
     poll_with_start_entry
         #(
@@ -383,8 +282,7 @@ module rni_arctrl
             arctrl_entry_full_r = arctrl_entry_full_r & arctrl_entry_v_q[i];
     end
 
-    assign alloc_busy_s1_w = arctrl_entry_full_r | ar_deny_pending_q |
-        ar_deny_active_q;
+    assign alloc_busy_s1_w = arctrl_entry_full_r;
     assign arctrl_entry_rdy_s1_w[RNI_AR_ENTRIES_NUM_PARAM-1:0] = ~arctrl_entry_v_q[RNI_AR_ENTRIES_NUM_PARAM-1:0] & {RNI_AR_ENTRIES_NUM_PARAM{arlink_valid_s1_w}};
     assign arctrl_entry_v_ns_w[RNI_AR_ENTRIES_NUM_PARAM-1:0] = (arctrl_entry_v_q[RNI_AR_ENTRIES_NUM_PARAM-1:0] | arctrl_alloc_ptr_s1_w[RNI_AR_ENTRIES_NUM_PARAM-1:0]) & ~arctrl_entry_dealloc_vec_w[RNI_AR_ENTRIES_NUM_PARAM-1:0];
 
@@ -1163,7 +1061,7 @@ module rni_arctrl
             rxdat_flitv_q <= 1'b0;
         end
         else begin
-            rxdat_flitv_q <= rxdat_owner_valid_d1_o;
+            rxdat_flitv_q <= rxdatflitv_d1_i;
         end
     end
 
@@ -1253,11 +1151,6 @@ module rni_arctrl
     /////////////////////////////////////////////////////////////
     // dealloc
     /////////////////////////////////////////////////////////////
-    /* Keep the parent and TxnID live after response data is queued.  Retirement
-     * is driven only by the final AXI R handshake reported by rd_buffer. */
-    assign arctrl_entry_dealloc_vec_w[RNI_AR_ENTRIES_NUM_PARAM-1:0] =
-        r_retire_valid_i ?
-        ({{(RNI_AR_ENTRIES_NUM_PARAM-1){1'b0}}, 1'b1} << r_retire_idx_i) :
-        {RNI_AR_ENTRIES_NUM_PARAM{1'b0}};
+    assign arctrl_entry_dealloc_vec_w[RNI_AR_ENTRIES_NUM_PARAM-1:0] = {RNI_AR_ENTRIES_NUM_PARAM{rp_fifo_acpt_d4_i && !(|arctrl_rdat_pdmask_ns_w[`RNI_DMASK_PD_WIDTH-1:0])}} & arctrl_rdata_send_q;
     assign arctrl_entry_dealloc_v_w = |arctrl_entry_dealloc_vec_w[RNI_AR_ENTRIES_NUM_PARAM-1:0];
 endmodule

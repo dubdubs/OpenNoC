@@ -32,7 +32,6 @@ module rni_awlink `RNI_PARAM
         // AMBA4
         AWVALID,
         AWBUS,
-        policy_allow_i,
         profile_coherent_i,
         policy_epoch_i,
         stall_flag_s1_i,
@@ -52,7 +51,6 @@ module rni_awlink `RNI_PARAM
         awlink_dmask_s2_o,
         awlink_size_s2_o,
         awlink_lock_s2_o,
-        awlink_policy_allow_o,
         awlink_profile_coherent_o,
         awlink_policy_epoch_o
         ,awlink_pending_o
@@ -70,7 +68,6 @@ module rni_awlink `RNI_PARAM
     // AMBA4 xface
     input wire                                  AWVALID;
     input wire  [`AXI4_AW_WIDTH-1:0]            AWBUS;
-    input wire                                  policy_allow_i;
     input wire                                  profile_coherent_i;
     input wire [7:0]                            policy_epoch_i;
     input wire                                  stall_flag_s1_i;
@@ -92,7 +89,6 @@ module rni_awlink `RNI_PARAM
     output wire [`RNI_DMASK_WIDTH-1:0]              awlink_dmask_s2_o;
     output wire [`CHIE_REQ_FLIT_SIZE_WIDTH-1:0]     awlink_size_s2_o;
     output wire                                     awlink_lock_s2_o;
-    output wire                                     awlink_policy_allow_o;
     output wire                                     awlink_profile_coherent_o;
     output wire [7:0]                               awlink_policy_epoch_o;
     output wire                                     awlink_pending_o;
@@ -108,7 +104,7 @@ module rni_awlink `RNI_PARAM
     wire                                axi_excl_s1_i;
     wire [`AXI4_AWLEN_WIDTH-1:0]        axi_len_in_s1_i;
     wire                                aw_fifo_empty;
-    wire [9:0]                          profile_fifo_out_s1_w;
+    wire [8:0]                          profile_fifo_out_s1_w;
 
     reg                                 awready_q;
 
@@ -145,7 +141,7 @@ module rni_awlink `RNI_PARAM
               );
 
     sync_fifo #(
-                  .FIFO_ENTRIES_WIDTH(10),
+                  .FIFO_ENTRIES_WIDTH(9),
                   .FIFO_ENTRIES_DEPTH(2),
                   .FIFO_BYP_ENABLE   (1'b0)
               ) sync_fifo_aw_profile (
@@ -153,21 +149,19 @@ module rni_awlink `RNI_PARAM
                   .rst        (rst_i),
                   .push       (AWVALID & AWREADY),
                   .pop        (awlink_done_s1_o),
-                  .data_in    ({policy_allow_i, profile_coherent_i,
-                                policy_epoch_i}),
+                  .data_in    ({profile_coherent_i, policy_epoch_i}),
                   .data_out   (profile_fifo_out_s1_w),
                   .empty      (),
                   .full       (),
                   .count      ()
               );
 
-    assign awlink_policy_allow_o = profile_fifo_out_s1_w[9];
     assign awlink_profile_coherent_o = profile_fifo_out_s1_w[8];
     assign awlink_policy_epoch_o = profile_fifo_out_s1_w[7:0];
     assign awlink_pending_o = ~aw_fifo_empty;
 
 
-    rni_segburst `RNI_PARAM_INST rni_segburst_aw(
+    rni_segburst rni_segburst_aw(
                      .clk_i                    (clk_i)
                      ,.rst_i                    (rst_i)
                      ,.axi_valid_s1_i           (axi_valid_s1_i)

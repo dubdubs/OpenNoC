@@ -36,18 +36,7 @@ module rni_rd_buffer `RNI_PARAM
         ,rxdatflitv_d1_o
         ,rxdatflit_txnid_d1_o
         ,rxdatflit_dataid_d1_o
-        ,rxdat_opcode_valid_d1_o
-        ,rxdat_owner_valid_d1_i
-        ,rxdat_owner_error_d1_i
-        ,rxdat_owner_idx_d1_i
         ,rp_fifo_acpt_d4_o
-        ,r_retire_valid_o
-        ,r_retire_idx_o
-        ,ar_deny_cmd_valid_i
-        ,ar_deny_cmd_ready_o
-        ,ar_deny_cmd_id_i
-        ,ar_deny_cmd_len_i
-        ,ar_deny_done_o
 
         //from rni_arctrl
         ,arctrl_rb_valid_d4_i
@@ -74,18 +63,7 @@ module rni_rd_buffer `RNI_PARAM
     output wire                                     rxdatflitv_d1_o;
     output wire [`CHIE_DAT_FLIT_TXNID_WIDTH-1:0]    rxdatflit_txnid_d1_o;
     output wire [`CHIE_DAT_FLIT_DATAID_WIDTH-1:0]   rxdatflit_dataid_d1_o;
-    output wire                                     rxdat_opcode_valid_d1_o;
-    input  wire                                     rxdat_owner_valid_d1_i;
-    input  wire                                     rxdat_owner_error_d1_i;
-    input  wire [`RNI_AR_ENTRIES_WIDTH-1:0]         rxdat_owner_idx_d1_i;
     output wire                                     rp_fifo_acpt_d4_o;
-    output wire                                     r_retire_valid_o;
-    output wire [`RNI_AR_ENTRIES_WIDTH-1:0]         r_retire_idx_o;
-    input  wire                                     ar_deny_cmd_valid_i;
-    output wire                                     ar_deny_cmd_ready_o;
-    input  wire [`AXI4_ARID_WIDTH-1:0]              ar_deny_cmd_id_i;
-    input  wire [`AXI4_ARLEN_WIDTH-1:0]             ar_deny_cmd_len_i;
-    output wire                                     ar_deny_done_o;
 
     //from rni_arctrl
     input  wire                                     arctrl_rb_valid_d4_i;
@@ -144,14 +122,11 @@ module rni_rd_buffer `RNI_PARAM
     wire [`AXI4_RRESP_WIDTH-1:0]                    resperr_256_d4_w [(`RNI_RD_BANK_NUM/2)-1:0];
     wire [`AXI4_RDATA_WIDTH-1:0]                    rdata_data_d4_w;
     wire [`AXI4_RRESP_WIDTH-1:0]                    rdata_resperr_d4_w;
-    wire [`AXI4_RRESP_WIDTH-1:0]                    rdata_resperr_raw_d4_w;
     wire                                            rp_fifo_avail_d4_w;
     wire                                            rp_fifo_push_d4_w;
     wire                                            rp_fifo_pop_d5_w;
-    wire [`AXI4_R_WIDTH+`RNI_BC_WIDTH+`RNI_AR_ENTRIES_WIDTH-1:0]
-                                                     rp_fifo_data_in_d4_w;
-    wire [`AXI4_R_WIDTH+`RNI_BC_WIDTH+`RNI_AR_ENTRIES_WIDTH-1:0]
-                                                     rp_fifo_data_out_d5_w;
+    wire [`AXI4_R_WIDTH+`RNI_BC_WIDTH-1:0]          rp_fifo_data_in_d4_w;
+    wire [`AXI4_R_WIDTH+`RNI_BC_WIDTH-1:0]          rp_fifo_data_out_d5_w;
     wire                                            rp_fifo_empty_w;
     wire                                            rp_fifo_full_w;
     wire                                            bcount_v_d5_w;
@@ -159,14 +134,12 @@ module rni_rd_buffer `RNI_PARAM
     wire [`RNI_BC_WIDTH-1:0]                        bcount_w;
     wire                                            bcount_zero_w;
     wire                                            bcount_done_w;
-    wire [`AXI4_R_WIDTH+`RNI_AR_ENTRIES_WIDTH-1:0]  rd_fifo_data_in_d5_w;
-    wire [`AXI4_R_WIDTH+`RNI_AR_ENTRIES_WIDTH-1:0]  rd_fifo_data_out_d6_w;
+    wire [`AXI4_R_WIDTH-1:0]                        rd_fifo_data_in_d5_w;
+    wire [`AXI4_R_WIDTH-1:0]                        rd_fifo_data_out_d6_w;
     wire                                            rd_fifo_empty_w;
     wire                                            rd_fifo_full_w;
     wire                                            rd_fifo_push_d5_w;
     wire                                            rd_fifo_pop_d5_w;
-    wire                                            normal_rvalid_w;
-    wire [`AXI4_R_WIDTH-1:0]                        normal_r_ch_w;
 
     //reg
     reg                                             rxdatflitv_d2_q;
@@ -174,21 +147,11 @@ module rni_rd_buffer `RNI_PARAM
     reg  [`CHIE_DAT_FLIT_DATA_WIDTH-1:0]            data_d2_q;
     reg  [`CHIE_DAT_FLIT_TXNID_WIDTH-1:0]           txnid_d2_q;
     reg  [`CHIE_DAT_FLIT_RESPERR_WIDTH-1:0]         resperr_d2_q;
-    reg                                             rxdat_owner_valid_d2_q;
-    reg                                             rxdat_owner_error_d2_q;
-    reg  [`RNI_AR_ENTRIES_WIDTH-1:0]                rxdat_owner_idx_d2_q;
-    reg  [RNI_AR_ENTRIES_NUM_PARAM-1:0]             protocol_error_q;
     reg  [`CHIE_DAT_FLIT_RESPERR_WIDTH-1:0]         resperr_bank_d3_q [RNI_AR_ENTRIES_NUM_PARAM-1:0][`RNI_RD_BANK_NUM-1:0];
     reg  [`RNI_BC_WIDTH-1:0]                        bcount_q;
-    reg                                             ar_deny_active_q;
-    reg [`AXI4_ARID_WIDTH-1:0]                      ar_deny_id_q;
-    reg [`AXI4_ARLEN_WIDTH-1:0]                     ar_deny_len_q;
-    reg [`AXI4_ARLEN_WIDTH-1:0]                     ar_deny_beat_q;
-    reg [`AXI4_R_WIDTH-1:0]                         ar_deny_r_ch_r;
 
     genvar bank;
     genvar entry;
-    integer retire_i;
 
     //rxdatflit decode
     assign txnid_d1_w   = rxdatflit_d1_i [`CHIE_DAT_FLIT_TXNID_RANGE];
@@ -205,72 +168,10 @@ module rni_rd_buffer `RNI_PARAM
     assign rxdatflitv_d1_o       = rxdatflitv_d1_i;
     assign rxdatflit_txnid_d1_o  = txnid_d1_w;
     assign rxdatflit_dataid_d1_o = dataid_d1_w;
-    assign rxdat_opcode_valid_d1_o =
-        (rxdatflit_d1_i[`CHIE_DAT_FLIT_OPCODE_RANGE] == `CHIE_COMPDATA);
-    assign r_retire_valid_o = !ar_deny_active_q && RVALID0 && RREADY0 &&
-        R_CH_S0[`AXI4_RLAST_RANGE];
-    assign r_retire_idx_o = rd_fifo_data_out_d6_w[
-        `AXI4_R_WIDTH +: `RNI_AR_ENTRIES_WIDTH];
-    assign ar_deny_cmd_ready_o = !ar_deny_active_q && !normal_rvalid_w;
-    assign ar_deny_done_o = ar_deny_active_q && RREADY0 &&
-        (ar_deny_beat_q == ar_deny_len_q);
-
-    always @* begin
-        ar_deny_r_ch_r = {`AXI4_R_WIDTH{1'b0}};
-        ar_deny_r_ch_r[`AXI4_RID_RANGE] = ar_deny_id_q;
-        ar_deny_r_ch_r[`AXI4_RRESP_RANGE] = 2'b11;
-        ar_deny_r_ch_r[`AXI4_RLAST_RANGE] =
-            (ar_deny_beat_q == ar_deny_len_q);
-    end
-
-    always @(posedge clk_i or posedge rst_i) begin
-        if (rst_i) begin
-            ar_deny_active_q <= 1'b0;
-            ar_deny_id_q <= {`AXI4_ARID_WIDTH{1'b0}};
-            ar_deny_len_q <= {`AXI4_ARLEN_WIDTH{1'b0}};
-            ar_deny_beat_q <= {`AXI4_ARLEN_WIDTH{1'b0}};
-        end else begin
-            if (ar_deny_cmd_valid_i && ar_deny_cmd_ready_o) begin
-                ar_deny_active_q <= 1'b1;
-                ar_deny_id_q <= ar_deny_cmd_id_i;
-                ar_deny_len_q <= ar_deny_cmd_len_i;
-                ar_deny_beat_q <= {`AXI4_ARLEN_WIDTH{1'b0}};
-            end else if (ar_deny_active_q && RREADY0) begin
-                if (ar_deny_beat_q == ar_deny_len_q)
-                    ar_deny_active_q <= 1'b0;
-                else
-                    ar_deny_beat_q <= ar_deny_beat_q + 1'b1;
-            end
-        end
-    end
 
     //forward to d2
     always @(posedge clk_i) begin
         rxdatflitv_d2_q  <= rxdatflitv_d1_i;
-        rxdat_owner_valid_d2_q <= rxdat_owner_valid_d1_i;
-        rxdat_owner_error_d2_q <= rxdat_owner_error_d1_i;
-        rxdat_owner_idx_d2_q <= rxdat_owner_idx_d1_i;
-    end
-
-    /* Attributable protocol errors poison only their owning AXI parent.  An
-     * unowned/stale TxnID is quarantined by suppressing every RAM write. */
-    always @(posedge clk_i or posedge rst_i) begin
-        if (rst_i) begin
-            protocol_error_q <= {RNI_AR_ENTRIES_NUM_PARAM{1'b0}};
-        end else begin
-            if (rxdatflitv_d2_q && rxdat_owner_error_d2_q &&
-                rxdat_owner_idx_d2_q < RNI_AR_ENTRIES_NUM_PARAM)
-                protocol_error_q[rxdat_owner_idx_d2_q] <= 1'b1;
-            if (r_retire_valid_o) begin
-                for (retire_i = 0;
-                     retire_i < RNI_AR_ENTRIES_NUM_PARAM;
-                     retire_i = retire_i + 1) begin
-                    /* The FIFO sideband carries the exact AR entry owner. */
-                    if (r_retire_idx_o == retire_i[`RNI_AR_ENTRIES_WIDTH-1:0])
-                        protocol_error_q[retire_i] <= 1'b0;
-                end
-            end
-        end
     end
 
     always @(posedge clk_i) begin
@@ -284,24 +185,24 @@ module rni_rd_buffer `RNI_PARAM
 
     //write data bank
 generate if(CHIE_DATA_WIDTH_PARAM == 128)begin
-            assign bank0_wr_en_d2_w   = (dataid_d2_q == 2'b00) & rxdatflitv_d2_q & rxdat_owner_valid_d2_q;
+            assign bank0_wr_en_d2_w   = (dataid_d2_q == 2'b00) & rxdatflitv_d2_q;
             assign bank0_wr_addr_d2_w = txnid_d2_q;
             assign bank0_wr_data_d2_w = data_d2_q;
 
-            assign bank1_wr_en_d2_w   = (dataid_d2_q == 2'b01) & rxdatflitv_d2_q & rxdat_owner_valid_d2_q;
+            assign bank1_wr_en_d2_w   = (dataid_d2_q == 2'b01) & rxdatflitv_d2_q;
             assign bank1_wr_addr_d2_w = txnid_d2_q;
             assign bank1_wr_data_d2_w = data_d2_q;
 
-            assign bank2_wr_en_d2_w   = (dataid_d2_q == 2'b10) & rxdatflitv_d2_q & rxdat_owner_valid_d2_q;
+            assign bank2_wr_en_d2_w   = (dataid_d2_q == 2'b10) & rxdatflitv_d2_q;
             assign bank2_wr_addr_d2_w = txnid_d2_q;
             assign bank2_wr_data_d2_w = data_d2_q;
 
-            assign bank3_wr_en_d2_w   = (dataid_d2_q == 2'b11) & rxdatflitv_d2_q & rxdat_owner_valid_d2_q;
+            assign bank3_wr_en_d2_w   = (dataid_d2_q == 2'b11) & rxdatflitv_d2_q;
             assign bank3_wr_addr_d2_w = txnid_d2_q;
             assign bank3_wr_data_d2_w = data_d2_q;
         end
         else if(CHIE_DATA_WIDTH_PARAM == 256)begin
-            assign bank0_wr_en_d2_w   = (dataid_d2_q == 2'b00) & rxdatflitv_d2_q & rxdat_owner_valid_d2_q;
+            assign bank0_wr_en_d2_w   = (dataid_d2_q == 2'b00) & rxdatflitv_d2_q;
             assign bank0_wr_addr_d2_w = txnid_d2_q;
             assign bank0_wr_data_d2_w = data_d2_q[127:0];
 
@@ -309,7 +210,7 @@ generate if(CHIE_DATA_WIDTH_PARAM == 128)begin
             assign bank1_wr_addr_d2_w = txnid_d2_q;
             assign bank1_wr_data_d2_w = data_d2_q[255:128];
 
-            assign bank2_wr_en_d2_w   = (dataid_d2_q == 2'b10) & rxdatflitv_d2_q & rxdat_owner_valid_d2_q;
+            assign bank2_wr_en_d2_w   = (dataid_d2_q == 2'b10) & rxdatflitv_d2_q;
             assign bank2_wr_addr_d2_w = txnid_d2_q;
             assign bank2_wr_data_d2_w = data_d2_q[127:0];
 
@@ -318,7 +219,7 @@ generate if(CHIE_DATA_WIDTH_PARAM == 128)begin
             assign bank3_wr_data_d2_w = data_d2_q[255:128];
         end
         else if(CHIE_DATA_WIDTH_PARAM == 512)begin
-            assign bank0_wr_en_d2_w   = (dataid_d2_q == 2'b00) & rxdatflitv_d2_q & rxdat_owner_valid_d2_q;
+            assign bank0_wr_en_d2_w   = (dataid_d2_q == 2'b00) & rxdatflitv_d2_q;
             assign bank0_wr_addr_d2_w = txnid_d2_q;
             assign bank0_wr_data_d2_w = data_d2_q[127:0];
 
@@ -340,22 +241,22 @@ generate if(CHIE_DATA_WIDTH_PARAM == 128)begin
 generate if(CHIE_DATA_WIDTH_PARAM == 128)begin
             for (entry=0; entry<RNI_AR_ENTRIES_NUM_PARAM; entry=entry+1)begin
                 for (bank=0; bank<`RNI_RD_BANK_NUM; bank=bank+1)begin
-                    assign resperr_bank_wren_d2_w[entry][bank] = rxdatflitv_d2_q & rxdat_owner_valid_d2_q & (rxdat_owner_idx_d2_q == entry) & (dataid_d2_q == bank);
+                    assign resperr_bank_wren_d2_w[entry][bank] = rxdatflitv_d2_q & (txnid_d2_q == entry) & (dataid_d2_q == bank);
                 end
             end
         end
         else if(CHIE_DATA_WIDTH_PARAM == 256)begin
             for (entry=0; entry<RNI_AR_ENTRIES_NUM_PARAM; entry=entry+1)begin
                 for (bank=0; bank<`RNI_RD_BANK_NUM; bank=bank+2)begin
-                    assign resperr_bank_wren_d2_w[entry][bank]   = rxdatflitv_d2_q & rxdat_owner_valid_d2_q & (rxdat_owner_idx_d2_q == entry) & (dataid_d2_q == bank);
-                    assign resperr_bank_wren_d2_w[entry][bank+1] = rxdatflitv_d2_q & rxdat_owner_valid_d2_q & (rxdat_owner_idx_d2_q == entry) & ((dataid_d2_q+1) == bank+1);
+                    assign resperr_bank_wren_d2_w[entry][bank]   = rxdatflitv_d2_q & (txnid_d2_q == entry) & (dataid_d2_q == bank);
+                    assign resperr_bank_wren_d2_w[entry][bank+1] = rxdatflitv_d2_q & (txnid_d2_q == entry) & ((dataid_d2_q+1) == bank+1);
                 end
             end
         end
         else if(CHIE_DATA_WIDTH_PARAM == 512)begin
             for (entry=0; entry<RNI_AR_ENTRIES_NUM_PARAM; entry=entry+1)begin
                 for (bank=0; bank<`RNI_RD_BANK_NUM; bank=bank+1)begin
-                    assign resperr_bank_wren_d2_w[entry][bank] = rxdatflitv_d2_q & rxdat_owner_valid_d2_q & (rxdat_owner_idx_d2_q == entry) & (dataid_d2_q == 2'b00);
+                    assign resperr_bank_wren_d2_w[entry][bank] = rxdatflitv_d2_q & (txnid_d2_q == entry) & (dataid_d2_q == 2'b00);
                 end
             end
         end
@@ -454,7 +355,7 @@ generate if(AXI4_AXDATA_WIDTH_PARAM == 128)begin
                    {`AXI4_RDATA_WIDTH{data_bank_ctmask_d4_w[2]}} & rdata_128_d4_w[2] |
                    {`AXI4_RDATA_WIDTH{data_bank_ctmask_d4_w[3]}} & rdata_128_d4_w[3] ;
 
-            assign rdata_resperr_raw_d4_w = {`AXI4_RRESP_WIDTH{data_bank_ctmask_d4_w[0]}} & resperr_128_d4_w[0] |
+            assign rdata_resperr_d4_w = {`AXI4_RRESP_WIDTH{data_bank_ctmask_d4_w[0]}} & resperr_128_d4_w[0] |
                    {`AXI4_RRESP_WIDTH{data_bank_ctmask_d4_w[1]}} & resperr_128_d4_w[1] |
                    {`AXI4_RRESP_WIDTH{data_bank_ctmask_d4_w[2]}} & resperr_128_d4_w[2] |
                    {`AXI4_RRESP_WIDTH{data_bank_ctmask_d4_w[3]}} & resperr_128_d4_w[3] ;
@@ -468,14 +369,10 @@ generate if(AXI4_AXDATA_WIDTH_PARAM == 128)begin
             assign rdata_data_d4_w = {`AXI4_RDATA_WIDTH{data_bank_ctmask_d4_w[0] & data_bank_ctmask_d4_w[1]}} & rdata_256_d4_w[0] |
                    {`AXI4_RDATA_WIDTH{data_bank_ctmask_d4_w[2] & data_bank_ctmask_d4_w[3]}} & rdata_256_d4_w[1] ;
 
-            assign rdata_resperr_raw_d4_w = {`AXI4_RRESP_WIDTH{data_bank_ctmask_d4_w[0] & data_bank_ctmask_d4_w[1]}} & resperr_256_d4_w[0] |
+            assign rdata_resperr_d4_w = {`AXI4_RRESP_WIDTH{data_bank_ctmask_d4_w[0] & data_bank_ctmask_d4_w[1]}} & resperr_256_d4_w[0] |
                    {`AXI4_RRESP_WIDTH{data_bank_ctmask_d4_w[2] & data_bank_ctmask_d4_w[3]}} & resperr_256_d4_w[1] ;
         end
     endgenerate
-
-    assign rdata_resperr_d4_w =
-        protocol_error_q[arctrl_rb_idx_d4_i] ? 2'b10 :
-        rdata_resperr_raw_d4_w;
 
     //R pending fifo
     assign rp_fifo_push_d4_w = rp_fifo_acpt_d4_o;
@@ -486,13 +383,9 @@ generate if(AXI4_AXDATA_WIDTH_PARAM == 128)begin
     assign rp_fifo_data_in_d4_w[`AXI4_RRESP_RANGE] = rdata_resperr_d4_w;
     assign rp_fifo_data_in_d4_w[`AXI4_RLAST_RANGE] = rdata_last_d4_w;
     assign rp_fifo_data_in_d4_w[`AXI4_RLAST_MSB+`RNI_BC_WIDTH:`AXI4_RLAST_MSB+1] = rdata_bc_d4_w;
-    assign rp_fifo_data_in_d4_w[
-        `AXI4_R_WIDTH + `RNI_BC_WIDTH +: `RNI_AR_ENTRIES_WIDTH] =
-        arctrl_rb_idx_d4_i;
 
     sync_fifo #(
-                  .FIFO_ENTRIES_WIDTH ( `RNI_RP_FIFO_WIDTH+
-                                        `RNI_AR_ENTRIES_WIDTH )
+                  .FIFO_ENTRIES_WIDTH ( `RNI_RP_FIFO_WIDTH    )
                   ,.FIFO_ENTRIES_DEPTH ( `RNI_RP_FIFO_DEPTH    )
                   ,.FIFO_BYP_ENABLE    ( 1'b0                  )
               ) rp_fifo_inst (
@@ -523,22 +416,16 @@ generate if(AXI4_AXDATA_WIDTH_PARAM == 128)begin
     assign bcount_done_w = bcount_v_d5_w & bcount_zero_w;
 
     //R dispath fifo
-    assign rd_fifo_pop_d5_w  = RREADY0 & normal_rvalid_w &
-        !ar_deny_active_q;
+    assign rd_fifo_pop_d5_w  = RREADY0 & RVALID0;
     assign rd_fifo_push_d5_w = bcount_v_d5_w & ~rd_fifo_full_w;
 
     assign rd_fifo_data_in_d5_w[`AXI4_RID_RANGE]   = rp_fifo_data_out_d5_w[`AXI4_RID_RANGE];
     assign rd_fifo_data_in_d5_w[`AXI4_RDATA_RANGE] = rp_fifo_data_out_d5_w[`AXI4_RDATA_RANGE];
     assign rd_fifo_data_in_d5_w[`AXI4_RRESP_RANGE] = rp_fifo_data_out_d5_w[`AXI4_RRESP_RANGE];
     assign rd_fifo_data_in_d5_w[`AXI4_RLAST_RANGE] = rp_fifo_data_out_d5_w[`AXI4_RLAST_RANGE] & bcount_v_d5_w & bcount_zero_w;
-    assign rd_fifo_data_in_d5_w[
-        `AXI4_R_WIDTH +: `RNI_AR_ENTRIES_WIDTH] =
-        rp_fifo_data_out_d5_w[
-            `AXI4_R_WIDTH + `RNI_BC_WIDTH +: `RNI_AR_ENTRIES_WIDTH];
 
     sync_fifo #(
-                  .FIFO_ENTRIES_WIDTH ( `RNI_RD_FIFO_WIDTH+
-                                        `RNI_AR_ENTRIES_WIDTH )
+                  .FIFO_ENTRIES_WIDTH ( `RNI_RD_FIFO_WIDTH    )
                   ,.FIFO_ENTRIES_DEPTH ( `RNI_RD_FIFO_DEPTH    )
                   ,.FIFO_BYP_ENABLE    ( 1'b0                  )
               ) rd_fifo (
@@ -553,10 +440,8 @@ generate if(AXI4_AXDATA_WIDTH_PARAM == 128)begin
                   ,.count              (                       )
               );
 
-    assign normal_rvalid_w = ~rd_fifo_empty_w;
-    assign normal_r_ch_w = rd_fifo_data_out_d6_w[`AXI4_R_WIDTH-1:0];
-    assign RVALID0 = ar_deny_active_q | normal_rvalid_w;
-    assign R_CH_S0 = ar_deny_active_q ? ar_deny_r_ch_r : normal_r_ch_w;
+    assign RVALID0 = ~rd_fifo_empty_w;
+    assign R_CH_S0 = rd_fifo_data_out_d6_w;
 
     // Assertion Checker
 `ifdef ASSERT_CHECKER_ON

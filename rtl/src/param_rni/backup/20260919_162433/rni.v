@@ -253,24 +253,30 @@ module rni `RNI_PARAM
     wire [`CHIE_DAT_FLIT_RANGE]                 rxdatflit_d1;
     wire [`CHIE_DAT_FLIT_TXNID_WIDTH-1:0]       rxdatflit_txnid_d1;
     wire [`CHIE_DAT_FLIT_DATAID_WIDTH-1:0]      rxdatflit_dataid_d1;
-    wire                                        rxdat_opcode_valid_d1;
-    wire                                        rxdat_owner_valid_d1;
-    wire                                        rxdat_owner_error_d1;
-    wire [`RNI_AR_ENTRIES_WIDTH-1:0]            rxdat_owner_idx_d1;
-    wire                                        r_retire_valid;
-    wire [`RNI_AR_ENTRIES_WIDTH-1:0]            r_retire_idx;
+    wire                                        arctrl_rxdat_rb_v_d2;
+    wire [`RNI_AR_ENTRIES_WIDTH-1:0]            arctrl_rxdat_rb_idx_d2;
     wire                                        rp_fifo_acpt_d4;
     wire                                        arctrl_rb_valid_d4;
     wire [`RNI_DMASK_CT_WIDTH-1:0]              arctrl_rb_ctmask_d4;
     wire                                        arctrl_rb_rlast_d4;
     wire [`AXI4_ARID_WIDTH-1:0]                 arctrl_rb_rid_d4;
+    wire [`CHIE_DAT_FLIT_RESPERR_WIDTH-1:0]     arctrl_rdata_resperr_d4;
     wire [`RNI_AR_ENTRIES_WIDTH-1:0]            arctrl_rb_idx_d4;
     wire [`RNI_BC_WIDTH-1:0]                    arctrl_rb_bc_d4;
+    wire [`CHIE_DAT_FLIT_WIDTH-1:0]             aw_txdatflit_s3;
+    wire                                        aw_txdatflitv_s3;
+    wire                                        aw_txdatflit_sent_s3;
     wire                                        pcrdgnt_pkt_v_d2;
     wire [`PCRDGRANT_PKT_WIDTH-1:0]             pcrdgnt_pkt_d2;
     wire [`CHIE_REQ_FLIT_WIDTH-1:0]             arctrl_txreqflit_s4;
     wire                                        arctrl_txreqflitv_s4;
     wire                                        arctrl_txreqflit_sent_s4;
+    wire [`CHIE_RSP_FLIT_WIDTH-1:0]             aw_txrspflit_s0;
+    wire                                        aw_txrspflitv_s0;
+    wire                                        aw_txrspflit_sent_s0;
+    wire [`CHIE_REQ_FLIT_WIDTH-1:0]             aw_txreqflit_s0;
+    wire                                        aw_txreqflitv_s0;
+    wire                                        aw_txreqflit_sent_s0;
     wire                                        arctrl_pcrdgnt_l_present_d3;
     wire                                        arctrl_pcrdgnt_h_present_d3;
     wire                                        aw_pcrdgnt_l_present_d3;
@@ -286,7 +292,6 @@ module rni `RNI_PARAM
     wire                                        awctrl_txreqflitv_s4;
     wire                                        awctrl_txreqflit_sent_s4;
     wire                                        awctrl_alloc_valid_s2;
-    wire                                        awctrl_alloc_last_s2;
     wire [RNI_AW_ENTRIES_NUM_PARAM-1:0]         awctrl_alloc_entry_s2;
     wire [`RNI_DMASK_CT_WIDTH-1:0]              awctrl_ctmask_s2;
     wire [`RNI_DMASK_PD_WIDTH-1:0]              awctrl_pdmask_s2;
@@ -294,7 +299,6 @@ module rni `RNI_PARAM
     wire [RNI_AW_ENTRIES_NUM_PARAM-1:0]         awctrl_dealloc_entry;
     wire                                        wb_req_fifo_pfull_d1;
     wire                                        wb_req_done_d3;
-    wire                                        wb_req_error_d3;
     wire [RNI_AW_ENTRIES_NUM_PARAM-1:0]         wb_req_entry_d3;
     wire                                        wb_not_busy_d1;
     wire                                        awctrl_txdat_rdy_v_d2;
@@ -338,15 +342,6 @@ module rni `RNI_PARAM
     wire [`AXI4_ARID_WIDTH:0]                    line_hazard_acquire_owner;
     wire [`AXI4_ARID_WIDTH:0]                    line_hazard_release_owner;
     wire                                        line_hazard_acquire_profile;
-    wire [2:0]                                  admitted_axsize;
-    wire                                        admitted_profile;
-    wire                                        ar_deny_valid;
-    wire                                        ar_deny_ready;
-    wire                                        ar_deny_cmd_valid;
-    wire                                        ar_deny_cmd_ready;
-    wire [`AXI4_ARID_WIDTH-1:0]                 ar_deny_cmd_id;
-    wire [`AXI4_ARLEN_WIDTH-1:0]                ar_deny_cmd_len;
-    wire                                        ar_deny_done;
 
     assign outstanding_empty = ~ar_outstanding & ~aw_outstanding & line_hazard_empty;
     // A request is visible to a legacy controller only in the cycle in which
@@ -356,18 +351,11 @@ module rni `RNI_PARAM
                                             line_hazard_acquire_ready);
     assign aw_hazard_ready = !AWVALID0 || (!line_hazard_select_ar &&
                                             line_hazard_acquire_ready);
-    assign ar_deny_valid = ARVALID0 & !ar_policy_allow & !admission_block;
-    assign ARREADY0 = !ARVALID0 ? arready_core :
-                      admission_block ? 1'b0 :
-                      ar_policy_allow ? (arready_core & ar_hazard_ready) :
-                                        ar_deny_ready;
-    assign AWREADY0 = awready_core & !admission_block &
-                      (~AWVALID0 | ~aw_policy_allow | aw_hazard_ready);
-    assign arvalid_core = ARVALID0 & ARREADY0 & ar_policy_allow;
+    assign ARREADY0 = arready_core & (~ARVALID0 | (ar_policy_allow & ar_hazard_ready));
+    assign AWREADY0 = awready_core & (~AWVALID0 | (aw_policy_allow & aw_hazard_ready));
+    assign arvalid_core = ARVALID0 & ARREADY0;
     assign awvalid_core = AWVALID0 & AWREADY0;
-    assign line_hazard_acquire_valid =
-        (arvalid_core & ar_policy_allow) |
-        (awvalid_core & aw_policy_allow);
+    assign line_hazard_acquire_valid = arvalid_core | awvalid_core;
     assign line_hazard_acquire_addr = line_hazard_select_ar ? ARADDR0 : AWADDR0;
     assign line_hazard_acquire_profile = line_hazard_select_ar ?
         ar_profile_coherent : aw_profile_coherent;
@@ -377,43 +365,6 @@ module rni `RNI_PARAM
         (BVALID0 & BREADY0);
     assign line_hazard_release_owner = (RVALID0 & RREADY0 & RLAST0) ?
         {1'b0, RID0} : {1'b1, BID0};
-    assign admitted_axsize = arvalid_core ? ARSIZE0 : AWSIZE0;
-    assign admitted_profile = arvalid_core ? ar_profile_coherent :
-                                             aw_profile_coherent;
-
-    // Elaborate the Scheme-1 width/resource contract in the real top.  The
-    // runtime checks here cover attributes known at AXI admission; TXRSP
-    // credit checking remains owned by rni_link_ctl.
-    rni_scheme1_static_assert #(
-        .AXI_DATA_WIDTH(AXI4_AXDATA_WIDTH_PARAM),
-        .CHI_DATA_WIDTH(CHIE_DATA_WIDTH_PARAM),
-        .CHI_BE_WIDTH(CHIE_BE_WIDTH_PARAM),
-        .CHI_TXNID_WIDTH(`CHIE_REQ_FLIT_TXNID_WIDTH),
-        .SLOT_COUNT(1 << (`CHIE_REQ_FLIT_TXNID_WIDTH - 2)),
-        .DBID_MAP_DEPTH(2 << (`CHIE_REQ_FLIT_TXNID_WIDTH - 2)),
-        .CHI_DATAID_WIDTH(`CHIE_DAT_FLIT_DATAID_WIDTH),
-        .AR_ENTRIES(RNI_AR_ENTRIES_NUM_PARAM),
-        .AW_ENTRIES(RNI_AW_ENTRIES_NUM_PARAM),
-        .PARENT_TABLE_DEPTH(RNI_AR_ENTRIES_NUM_PARAM +
-                            RNI_AW_ENTRIES_NUM_PARAM),
-        .CHILD_TABLE_DEPTH(RNI_AR_ENTRIES_NUM_PARAM +
-                           RNI_AW_ENTRIES_NUM_PARAM),
-        .FRAGMENT_TABLE_DEPTH(2 * (RNI_AR_ENTRIES_NUM_PARAM +
-                                  RNI_AW_ENTRIES_NUM_PARAM)),
-        .ENABLE_NONCOHERENT(ENABLE_NONCOHERENT_PARAM),
-        .ENABLE_COHERENT(ENABLE_COHERENT_REQ_PARAM)
-    ) rni_scheme1_static_assert_inst (
-        .clk(CLK),
-        .rst(RST),
-        .admission_valid(arvalid_core | awvalid_core),
-        .axsize(admitted_axsize),
-        .profile_coherent(admitted_profile),
-        .profile_enabled(1'b1),
-        .txnid({`CHIE_REQ_FLIT_TXNID_WIDTH{1'b0}}),
-        .txrsp_valid(1'b0),
-        .txrsp_credit(1'b1),
-        .req_attr_complete(1'b1)
-    );
 
     // A token is acquired at AR/AW acceptance and retained until the final
     // AXI response handshake.  This serializes conflicting profiles on a
@@ -526,18 +477,7 @@ module rni `RNI_PARAM
                       ,.rxdatflitv_d1_o                       ( rxdatflitv_d1_w               )
                       ,.rxdatflit_txnid_d1_o                  ( rxdatflit_txnid_d1            )
                       ,.rxdatflit_dataid_d1_o                 ( rxdatflit_dataid_d1           )
-                      ,.rxdat_opcode_valid_d1_o               ( rxdat_opcode_valid_d1         )
-                      ,.rxdat_owner_valid_d1_i                ( rxdat_owner_valid_d1          )
-                      ,.rxdat_owner_error_d1_i                ( rxdat_owner_error_d1          )
-                      ,.rxdat_owner_idx_d1_i                  ( rxdat_owner_idx_d1            )
                       ,.rp_fifo_acpt_d4_o                     ( rp_fifo_acpt_d4               )
-                      ,.r_retire_valid_o                      ( r_retire_valid                )
-                      ,.r_retire_idx_o                        ( r_retire_idx                  )
-                      ,.ar_deny_cmd_valid_i                  ( ar_deny_cmd_valid            )
-                      ,.ar_deny_cmd_ready_o                  ( ar_deny_cmd_ready            )
-                      ,.ar_deny_cmd_id_i                     ( ar_deny_cmd_id               )
-                      ,.ar_deny_cmd_len_i                    ( ar_deny_cmd_len              )
-                      ,.ar_deny_done_o                       ( ar_deny_done                 )
                       ,.arctrl_rb_valid_d4_i                  ( arctrl_rb_valid_d4            )
                       ,.arctrl_rb_idx_d4_i                    ( arctrl_rb_idx_d4              )
                       ,.arctrl_rb_ctmask_d4_i                 ( arctrl_rb_ctmask_d4           )
@@ -560,13 +500,6 @@ module rni `RNI_PARAM
                    ,.ar_profile_coherent_i                 ( ar_profile_coherent            )
                    ,.ar_policy_epoch_i                     ( POLICYEPOCH                    )
                    ,.ar_outstanding_o                      ( ar_outstanding                 )
-                   ,.ar_deny_valid_i                       ( ar_deny_valid                 )
-                   ,.ar_deny_ready_o                       ( ar_deny_ready                 )
-                   ,.ar_deny_cmd_valid_o                   ( ar_deny_cmd_valid             )
-                   ,.ar_deny_cmd_ready_i                   ( ar_deny_cmd_ready             )
-                   ,.ar_deny_cmd_id_o                      ( ar_deny_cmd_id                )
-                   ,.ar_deny_cmd_len_o                     ( ar_deny_cmd_len               )
-                   ,.ar_deny_done_i                        ( ar_deny_done                  )
                    ,.arctrl_txreqflitv_s4_o                ( arctrl_txreqflitv_s4          )
                    ,.arctrl_txreqflit_s4_o                 ( arctrl_txreqflit_s4           )
                    ,.arctrl_txreqflit_sent_s4_i            ( arctrl_txreqflit_sent_s4      )
@@ -575,13 +508,7 @@ module rni `RNI_PARAM
                    ,.rxdatflitv_d1_i                       ( rxdatflitv_d1_w               )
                    ,.rxdatflit_txnid_d1_i                  ( rxdatflit_txnid_d1            )
                    ,.rxdatflit_dataid_d1_i                 ( rxdatflit_dataid_d1           )
-                   ,.rxdat_opcode_valid_d1_i               ( rxdat_opcode_valid_d1         )
-                   ,.rxdat_owner_valid_d1_o                ( rxdat_owner_valid_d1          )
-                   ,.rxdat_owner_error_d1_o                ( rxdat_owner_error_d1          )
-                   ,.rxdat_owner_idx_d1_o                  ( rxdat_owner_idx_d1            )
                    ,.rp_fifo_acpt_d4_i                     ( rp_fifo_acpt_d4               )
-                   ,.r_retire_valid_i                      ( r_retire_valid                )
-                   ,.r_retire_idx_i                        ( r_retire_idx                  )
                    ,.arctrl_rb_valid_d4_o                  ( arctrl_rb_valid_d4            )
                    ,.arctrl_rb_ctmask_d4_o                 ( arctrl_rb_ctmask_d4           )
                    ,.arctrl_rb_rlast_d4_o                  ( arctrl_rb_rlast_d4            )
@@ -636,7 +563,6 @@ module rni `RNI_PARAM
                    ,.AW_CH_S0                              ( AW_CH_S0                      )
                    ,.AWREADY0                              ( awready_core                  )
                    ,.aw_profile_coherent_i                 ( aw_profile_coherent            )
-                   ,.aw_policy_allow_i                      ( aw_policy_allow                 )
                    ,.aw_policy_epoch_i                     ( POLICYEPOCH                    )
                    ,.aw_outstanding_o                      ( aw_outstanding                 )
                    ,.pcrdgnt_pkt_v_d2_i                    ( pcrdgnt_pkt_v_d2              )
@@ -646,7 +572,6 @@ module rni `RNI_PARAM
                    ,.awctrl_pcrdgnt_h_win_d3_i             ( aw_pcrdgnt_h_win_d3           )
                    ,.awctrl_pcrdgnt_l_win_d3_i             ( aw_pcrdgnt_l_win_d3           )
                    ,.awctrl_alloc_valid_s2_o               ( awctrl_alloc_valid_s2         )
-                   ,.awctrl_alloc_last_s2_o                ( awctrl_alloc_last_s2          )
                    ,.awctrl_alloc_entry_s2_o               ( awctrl_alloc_entry_s2         )
                    ,.awctrl_ctmask_s2_o                    ( awctrl_ctmask_s2              )
                    ,.awctrl_pdmask_s2_o                    ( awctrl_pdmask_s2              )
@@ -654,7 +579,6 @@ module rni `RNI_PARAM
                    ,.awctrl_dealloc_entry_o                ( awctrl_dealloc_entry          )
                    ,.wb_req_fifo_pfull_d1_i                ( wb_req_fifo_pfull_d1          )
                    ,.wb_req_done_d3_i                      ( wb_req_done_d3                )
-                   ,.wb_req_error_d3_i                     ( wb_req_error_d3               )
                    ,.wb_req_entry_d3_i                     ( wb_req_entry_d3               )
                    ,.wb_not_busy_d1_i                      ( wb_not_busy_d1                )
                    ,.awctrl_txdat_rdy_v_d2_o               ( awctrl_txdat_rdy_v_d2         )
@@ -681,7 +605,6 @@ module rni `RNI_PARAM
                       .clk_i                                 ( CLK                           )
                       ,.rst_i                                 ( RST                           )
                       ,.aw_alloc_valid_s2_i                   ( awctrl_alloc_valid_s2         )
-                      ,.aw_alloc_last_s2_i                    ( awctrl_alloc_last_s2          )
                       ,.aw_alloc_entry_s2_i                   ( awctrl_alloc_entry_s2         )
                       ,.aw_ctmask_s2_i                        ( awctrl_ctmask_s2              )
                       ,.aw_pdmask_s2_i                        ( awctrl_pdmask_s2              )
@@ -689,7 +612,6 @@ module rni `RNI_PARAM
                       ,.awctrl_dealloc_entry_i                ( awctrl_dealloc_entry          )
                       ,.wb_req_fifo_pfull_d1_o                ( wb_req_fifo_pfull_d1          )
                       ,.wb_req_done_d3_o                      ( wb_req_done_d3                )
-                      ,.wb_req_error_d3_o                     ( wb_req_error_d3               )
                       ,.wb_req_entry_d3_o                     ( wb_req_entry_d3               )
                       ,.wb_not_busy_d1_o                      ( wb_not_busy_d1                )
                       ,.txdat_rdy_v_d2_q_i                    ( awctrl_txdat_rdy_v_d2         )
@@ -775,6 +697,5 @@ module rni `RNI_PARAM
                      ,.rxrspflit_d1_q_o                      ( rxrspflit_d1_q                )
                      ,.rxdatflitv_d1_o                       ( rxdatflitv_d1                 )
                      ,.rxdatflit_d1_q_o                      ( rxdatflit_d1                  )
-                     ,.rxdatflit_ready_i                     ( 1'b1                          )
                  );
 endmodule

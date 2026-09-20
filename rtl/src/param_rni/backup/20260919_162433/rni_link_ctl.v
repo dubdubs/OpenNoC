@@ -76,7 +76,6 @@ module rni_link_ctl `RNI_PARAM
         ,rxrspflit_d1_q_o
         ,rxdatflitv_d1_o
         ,rxdatflit_d1_q_o
-        ,rxdatflit_ready_i
     );
     // global inputs
     input  wire                            clk_i;
@@ -132,8 +131,7 @@ module rni_link_ctl `RNI_PARAM
     output wire                            rxrspflitv_d1_o;
     output reg  [`CHIE_RSP_FLIT_RANGE]     rxrspflit_d1_q_o;
     output wire                            rxdatflitv_d1_o;
-    output wire [`CHIE_DAT_FLIT_RANGE]     rxdatflit_d1_q_o;
-    input  wire                            rxdatflit_ready_i;
+    output reg  [`CHIE_DAT_FLIT_RANGE]     rxdatflit_d1_q_o;
 
     // internal wire
     wire                                   rxrsplcrdv_d1_w;
@@ -172,15 +170,12 @@ module rni_link_ctl `RNI_PARAM
     wire                                   txrspflit_lcrd_v;
     wire                                   txdatflit_send_d3_w;
     wire                                   txreqflit_lcrd_v;
-    wire                                   rxdat_fifo_empty;
-    wire                                   rxdat_fifo_full;
-    wire                                   rxdat_fifo_pop;
-    wire                                   rxdat_fifo_is_lcrd;
-    wire [`CHIE_DAT_FLIT_RANGE]            rxdat_fifo_data;
 
     // internal reg
     reg                                    rxrspflitpend_d1_q;
     reg                                    rxrspflitv_d1_q;
+    reg                                    rxdatflitpend_d1_q;
+    reg                                    rxdatflitv_d1_q;
     reg                                    txdatflitv_d4_q;
     reg  [`CHIE_DAT_FLIT_RANGE]            txdatflit_d4_q;
     reg                                    txrspflitv_d1_q;
@@ -329,32 +324,43 @@ module rni_link_ctl `RNI_PARAM
                   );
 
     //***************** RXDAT Channel *****************
-    // The peer can have XP_LCRD_NUM_PARAM credits outstanding.  Buffer that
-    // complete window and return a credit only after the downstream consumer
-    // accepts the flit.  This is the ready boundary used by the parameterized
-    // DAT adapter; the legacy datapath ties ready high.
-    sync_fifo #(
-        .FIFO_ENTRIES_WIDTH(`CHIE_DAT_FLIT_WIDTH),
-        .FIFO_ENTRIES_DEPTH(XP_LCRD_NUM_PARAM + 1),
-        .FIFO_BYP_ENABLE(1'b0)
-    ) rxdat_consume_fifo (
-        .clk(clk_i),
-        .rst(rst_i),
-        .push(RXDATFLITV && !rxdat_fifo_full),
-        .pop(rxdat_fifo_pop),
-        .data_in(RXDATFLIT),
-        .data_out(rxdat_fifo_data),
-        .empty(rxdat_fifo_empty),
-        .full(rxdat_fifo_full),
-        .count()
-    );
+    //         D0                         D1                    D2
+    //       RXDATFLIT              rxdatflit_d1_q_o          RXDATLCRDV
+    //       RXDATFLITV             rxdatflitv_d1_q
+    //
+    //*************************************************
+    always @(posedge clk_i or posedge rst_i) begin
+        if (rst_i == 1'b1)
+            rxdatflitpend_d1_q <= 1'b0;
+        else
+            rxdatflitpend_d1_q <= RXDATFLITPEND;
+    end
 
-    assign rxdat_fifo_is_lcrd =
-        rxdat_fifo_data[`CHIE_DAT_FLIT_OPCODE_RANGE] == `CHIE_DATLCRDRETURN;
-    assign rxdatflitv_d1_o = !rxdat_fifo_empty && !rxdat_fifo_is_lcrd;
-    assign rxdatflit_d1_q_o = rxdat_fifo_data;
-    assign rxdat_fifo_pop = !rxdat_fifo_empty &&
-                            (rxdat_fifo_is_lcrd || rxdatflit_ready_i);
+    always @(posedge clk_i or posedge rst_i) begin
+        if (rst_i == 1'b1)
+            rxdatflitv_d1_q <= 1'b0;
+        else
+            rxdatflitv_d1_q <= RXDATFLITV;
+    end
+
+    assign rxdatflitv_d1_o = rxdatflitv_d1_q & (rxdatflit_d1_q_o[`CHIE_DAT_FLIT_OPCODE_RANGE] != `CHIE_DATLCRDRETURN);
+
+    // RXDATFLITPEND is used when LINKFLITPEND_EN assert on
+    always @(posedge clk_i or posedge rst_i) begin
+        if (rst_i == 1'b1)
+            rxdatflit_d1_q_o <= {`CHIE_DAT_FLIT_WIDTH{1'b0}};
+`ifdef LINKFLITPEND_EN
+
+        else if (rxdatflitpend_d1_q == 1'b1 && RXDATFLITV == 1'b1)
+            rxdatflit_d1_q_o <= RXDATFLIT;
+`else
+        else if (RXDATFLITV == 1'b1)
+            rxdatflit_d1_q_o <= RXDATFLIT;
+`endif
+
+        else
+            rxdatflit_d1_q_o <= rxdatflit_d1_q_o;
+    end
 
     assign rxdatlcrdv_d1_w = rxdat_lcrd_avail_d1_w & rxcrd_en;
 
@@ -371,7 +377,7 @@ module rni_link_ctl `RNI_PARAM
                   )rxdat_lcrd_hdlr(
                       .clk               ( clk_i                  )
                       ,.rst               ( rst_i                  )
-                      ,.lcrd_inc          ( rxdat_fifo_pop         )
+                      ,.lcrd_inc          ( rxdatflitv_d1_q        )
                       ,.lcrd_dec          ( rxdatlcrdv_d1_w        )
                       ,.lcrd_full         ( rxdat_lcrd_full_d2_w   )
                       ,.lcrd_avail        ( rxdat_lcrd_avail_d1_w  )
