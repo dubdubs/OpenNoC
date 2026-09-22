@@ -278,7 +278,124 @@ module tb_axi2chi_nocoh_top_write;
     @(posedge clk);
     @(negedge clk);
 
-    $display("PASS: top-level AXI write to CHI TXREQ/TXDAT/RXRSP/B response");
+    // Return the two credits consumed by the single-beat transactions above.
+    chi_txreq_lcrdv_i = 1'b1;
+    chi_txdat_lcrdv_i = 1'b1;
+    repeat (2) begin
+      @(posedge clk);
+      @(negedge clk);
+    end
+    chi_txreq_lcrdv_i = 1'b0;
+    chi_txdat_lcrdv_i = 1'b0;
+
+    // A four-beat INCR burst creates and completes one CHI write child per
+    // AXI beat.  Only the final child completion may produce AXI B.
+    s_axi_awid = 2'd3;
+    s_axi_awaddr = 32'h0000_3000;
+    s_axi_awlen = 8'd3;
+    s_axi_awsize = 3'd3;
+    s_axi_awburst = 2'b01;
+    s_axi_bready = 1'b0;
+    s_axi_awvalid = 1'b1;
+    #1;
+    `CHECK(s_axi_awready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_awvalid = 1'b0;
+
+    for (int unsigned beat = 0; beat < 4; beat++) begin
+      repeat (8) begin
+        if (!chi_txreq_flitv_o) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(chi_txreq_flitv_o);
+      `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] ==
+          32'h0000_3000 + (beat << 3));
+      @(posedge clk);
+      @(negedge clk);
+      chi_txreq_lcrdv_i = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      chi_txreq_lcrdv_i = 1'b0;
+
+      chi_rxrsp_flit_i = '0;
+      chi_rxrsp_flit_i[3:0] = 4'h1;
+      chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'h80 + beat;
+      chi_rxrsp_flit_i[36 +: 2] = 2'b00;
+      chi_rxrsp_flitv_i = 1'b1;
+      #1;
+      `CHECK(chi_rxrsp_lcrdv_o);
+      @(posedge clk);
+      @(negedge clk);
+      chi_rxrsp_flitv_i = 1'b0;
+
+      s_axi_wdata = 64'h4000_0000_0000_0000 + beat;
+      s_axi_wstrb = 8'hff;
+      s_axi_wlast = beat == 3;
+      s_axi_wvalid = 1'b1;
+      repeat (4) begin
+        if (!s_axi_wready) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(s_axi_wready);
+      @(posedge clk);
+      @(negedge clk);
+      s_axi_wvalid = 1'b0;
+
+      repeat (4) begin
+        if (!chi_txdat_flitv_o) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(chi_txdat_flitv_o);
+      `CHECK(chi_txdat_flit_o[24 +: ChiDbidWidth] == 8'h80 + beat);
+      `CHECK(chi_txdat_flit_o[128 +: ChiDataWidth] ==
+          64'h4000_0000_0000_0000 + beat);
+      @(posedge clk);
+      @(negedge clk);
+      chi_txdat_lcrdv_i = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      chi_txdat_lcrdv_i = 1'b0;
+
+      chi_rxrsp_flit_i = '0;
+      chi_rxrsp_flit_i[3:0] = 4'h3;
+      chi_rxrsp_flit_i[36 +: 2] = 2'b00;
+      chi_rxrsp_flitv_i = 1'b1;
+      #1;
+      `CHECK(chi_rxrsp_lcrdv_o);
+      @(posedge clk);
+      @(negedge clk);
+      chi_rxrsp_flitv_i = 1'b0;
+      if (beat < 3) begin
+        #1;
+        `CHECK(!s_axi_bvalid);
+      end
+    end
+
+    repeat (4) begin
+      if (!s_axi_bvalid) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(s_axi_bvalid);
+    `CHECK(s_axi_bid == 2'd3);
+    `CHECK(s_axi_bresp == 2'b00);
+    s_axi_bready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+
+    $display("PASS: top-level AXI write, including four-beat INCR burst");
     $finish;
   end
 endmodule

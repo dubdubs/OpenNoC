@@ -121,6 +121,10 @@ module axi2chi_nocoh_top #(
   logic [ParentIndexWidth-1:0] ctx_rd_issue_parent_idx;
   logic [AxiAddrWidth-1:0] ctx_rd_issue_addr;
   logic [AxlenWidth-1:0] ctx_rd_issue_axi_beat;
+  logic ctx_wr_issue_valid;
+  logic [ParentIndexWidth-1:0] ctx_wr_issue_parent_idx;
+  logic [AxiAddrWidth-1:0] ctx_wr_issue_addr;
+  logic [AxlenWidth-1:0] ctx_wr_issue_axi_beat;
   logic rd_core_txreq_valid;
   logic [ReqFlitWidth-1:0] rd_core_txreq_payload;
   logic rd_core_txreq_ready;
@@ -154,6 +158,7 @@ module axi2chi_nocoh_top #(
   logic wr_child_alloc_ready;
   logic [ParentIndexWidth-1:0] wr_child_alloc_parent_idx;
   logic [AxiAddrWidth-1:0] wr_child_alloc_addr;
+  logic [AxlenWidth-1:0] wr_child_alloc_axi_beat;
   logic [ChildIndexWidth-1:0] wr_child_alloc_idx;
   logic [ChiTxnidWidth-1:0] wr_child_alloc_txnid;
   logic wr_child_event_valid;
@@ -180,6 +185,9 @@ module axi2chi_nocoh_top #(
   logic [2:0] child_event_type;
   logic [ChiDbidWidth-1:0] child_event_dbid;
   logic [1:0] child_event_resp;
+  logic [ParentIndexWidth-1:0] child_event_parent_idx;
+  logic child_event_parent_complete;
+  logic child_event_parent_error;
   logic child_lookup_valid;
   logic [ParentIndexWidth-1:0] child_lookup_parent_idx;
   logic [AxiIdWidth-1:0] child_lookup_axi_id;
@@ -214,7 +222,7 @@ module axi2chi_nocoh_top #(
   assign wr_rsp_id = wr_active_axi_id_q;
   assign wr_rsp_resp = wr_rsp_resp_q;
   assign wr_admit_fire = slave_wr_admit_valid && ctx_wr_admit_ready &&
-      wr_issue_ready && core_txreq_ready && !wr_outstanding_q;
+      !wr_outstanding_q;
   // Preserve an RXRSP flit at the CHI boundary until the engine that owns its
   // TxnID and expected response opcode can accept it.
   assign core_rxrsp_ready = rd_core_rxrsp_ready || wr_core_rxrsp_ready;
@@ -295,8 +303,7 @@ module axi2chi_nocoh_top #(
     .rd_admit_size_o(slave_rd_admit_size),
     .rd_admit_burst_o(slave_rd_admit_burst),
     .wr_admit_valid_o(slave_wr_admit_valid),
-    .wr_admit_ready_i(ctx_wr_admit_ready && wr_issue_ready && core_txreq_ready &&
-        !wr_outstanding_q),
+    .wr_admit_ready_i(ctx_wr_admit_ready && !wr_outstanding_q),
     .wr_admit_parent_idx_i(ctx_wr_admit_parent_idx),
     .wr_admit_id_o(slave_wr_admit_id),
     .wr_admit_addr_o(slave_wr_admit_addr),
@@ -340,9 +347,7 @@ module axi2chi_nocoh_top #(
     .rd_admit_len_i(slave_rd_admit_len),
     .rd_admit_size_i(slave_rd_admit_size),
     .rd_admit_burst_i(slave_rd_admit_burst),
-    .wr_admit_valid_i(slave_wr_admit_valid && wr_issue_ready &&
-        core_txreq_ready &&
-        !wr_outstanding_q),
+    .wr_admit_valid_i(slave_wr_admit_valid && !wr_outstanding_q),
     .wr_admit_ready_o(ctx_wr_admit_ready),
     .wr_admit_id_i(slave_wr_admit_id),
     .wr_admit_addr_i(slave_wr_admit_addr),
@@ -356,12 +361,17 @@ module axi2chi_nocoh_top #(
     .rd_issue_parent_idx_o(ctx_rd_issue_parent_idx),
     .rd_issue_addr_o(ctx_rd_issue_addr),
     .rd_issue_axi_beat_o(ctx_rd_issue_axi_beat),
+    .wr_issue_valid_o(ctx_wr_issue_valid),
+    .wr_issue_ready_i(wr_issue_ready),
+    .wr_issue_parent_idx_o(ctx_wr_issue_parent_idx),
+    .wr_issue_addr_o(ctx_wr_issue_addr),
+    .wr_issue_axi_beat_o(ctx_wr_issue_axi_beat),
     .child_alloc_valid_i(child_alloc_valid),
     .child_alloc_ready_o(child_alloc_ready),
     .child_alloc_parent_idx_i(child_alloc_parent_idx),
     .child_alloc_is_write_i(child_alloc_is_write),
     .child_alloc_axi_beat_i(rd_child_alloc_valid ?
-        rd_child_alloc_axi_beat : '0),
+        rd_child_alloc_axi_beat : wr_child_alloc_axi_beat),
     .child_alloc_addr_i(child_alloc_addr),
     .child_alloc_frag_idx_i('0),
     .child_alloc_idx_o(child_alloc_idx),
@@ -374,6 +384,9 @@ module axi2chi_nocoh_top #(
     .child_event_type_i(child_event_type),
     .child_event_dbid_i(child_event_dbid),
     .child_event_resp_i(child_event_resp),
+    .child_event_parent_idx_o(child_event_parent_idx),
+    .child_event_parent_complete_o(child_event_parent_complete),
+    .child_event_parent_error_o(child_event_parent_error),
     .child_lookup_valid_i(rd_fragment_valid),
     .child_lookup_idx_i(rd_fragment_child_idx),
     .child_lookup_valid_o(child_lookup_valid),
@@ -492,16 +505,16 @@ module axi2chi_nocoh_top #(
   ) wr_engine (
     .clk(clk),
     .rst(rst),
-    .wr_issue_valid_i(slave_wr_admit_valid && ctx_wr_admit_ready &&
-        core_txreq_ready &&
-        !wr_outstanding_q),
+    .wr_issue_valid_i(ctx_wr_issue_valid),
     .wr_issue_ready_o(wr_issue_ready),
-    .wr_issue_parent_idx_i(ctx_wr_admit_parent_idx),
-    .wr_issue_addr_i(slave_wr_admit_addr),
+    .wr_issue_parent_idx_i(ctx_wr_issue_parent_idx),
+    .wr_issue_addr_i(ctx_wr_issue_addr),
+    .wr_issue_axi_beat_i(ctx_wr_issue_axi_beat),
     .child_alloc_valid_o(wr_child_alloc_valid),
     .child_alloc_ready_i(wr_child_alloc_ready),
     .child_alloc_parent_idx_o(wr_child_alloc_parent_idx),
     .child_alloc_addr_o(wr_child_alloc_addr),
+    .child_alloc_axi_beat_o(wr_child_alloc_axi_beat),
     .child_alloc_idx_i(wr_child_alloc_idx),
     .child_alloc_txnid_i(wr_child_alloc_txnid),
     .child_event_valid_o(wr_child_event_valid),
@@ -538,9 +551,10 @@ module axi2chi_nocoh_top #(
         wr_active_parent_idx_q <= ctx_wr_admit_parent_idx;
       end
 
-      if (wr_child_event_valid) begin
+      if (wr_child_event_valid && child_event_parent_complete &&
+          child_event_parent_idx == wr_active_parent_idx_q) begin
         wr_rsp_hold_valid_q <= 1'b1;
-        wr_rsp_resp_q <= wr_child_event_type == 3'd5 ? 2'b10 : 2'b00;
+        wr_rsp_resp_q <= child_event_parent_error ? 2'b10 : 2'b00;
       end else if (wr_rsp_valid && wr_rsp_ready) begin
         wr_rsp_hold_valid_q <= 1'b0;
         wr_outstanding_q <= 1'b0;

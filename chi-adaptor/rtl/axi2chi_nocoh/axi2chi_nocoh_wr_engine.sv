@@ -19,10 +19,12 @@ module axi2chi_nocoh_wr_engine #(
   output logic wr_issue_ready_o,
   input logic [$clog2(ParentEntries)-1:0] wr_issue_parent_idx_i,
   input logic [AxiAddrWidth-1:0] wr_issue_addr_i,
+  input logic [7:0] wr_issue_axi_beat_i,
   output logic child_alloc_valid_o,
   input logic child_alloc_ready_i,
   output logic [$clog2(ParentEntries)-1:0] child_alloc_parent_idx_o,
   output logic [AxiAddrWidth-1:0] child_alloc_addr_o,
+  output logic [7:0] child_alloc_axi_beat_o,
   input logic [$clog2(ChildEntries)-1:0] child_alloc_idx_i,
   input logic [ChiTxnidWidth-1:0] child_alloc_txnid_i,
   output logic child_event_valid_o,
@@ -65,6 +67,7 @@ module axi2chi_nocoh_wr_engine #(
   logic [ChiDbidWidth-1:0] dbid_q [ChildEntries];
   logic is_full_q [ChildEntries];
   logic [AxiAddrWidth-1:0] addr_q [ChildEntries];
+  logic [7:0] axi_beat_q [ChildEntries];
   logic [DatFlitWidth-1:0] dat_payload_q [ChildEntries];
   logic [1:0] resp_q [ChildEntries];
   logic completion_seen_q [ChildEntries];
@@ -157,6 +160,7 @@ module axi2chi_nocoh_wr_engine #(
     child_alloc_valid_o = 1'b0;
     child_alloc_parent_idx_o = parent_q[alloc_lane_idx];
     child_alloc_addr_o = addr_q[alloc_lane_idx];
+    child_alloc_axi_beat_o = axi_beat_q[alloc_lane_idx];
     child_event_valid_o = 1'b0;
     child_event_idx_o = child_q[event_lane_idx];
     child_event_type_o = 3'd0;
@@ -208,6 +212,7 @@ module axi2chi_nocoh_wr_engine #(
         dbid_q[idx] <= '0;
         is_full_q[idx] <= EnableWriteNoSnpFull;
         addr_q[idx] <= '0;
+        axi_beat_q[idx] <= '0;
         dat_payload_q[idx] <= '0;
         resp_q[idx] <= '0;
         completion_seen_q[idx] <= 1'b0;
@@ -216,6 +221,7 @@ module axi2chi_nocoh_wr_engine #(
       if (issue_fire) begin
         parent_q[issue_lane_idx] <= wr_issue_parent_idx_i;
         addr_q[issue_lane_idx] <= wr_issue_addr_i;
+        axi_beat_q[issue_lane_idx] <= wr_issue_axi_beat_i;
         is_full_q[issue_lane_idx] <= EnableWriteNoSnpFull;
         completion_seen_q[issue_lane_idx] <= 1'b0;
         state_q[issue_lane_idx] <= kWrAlloc;

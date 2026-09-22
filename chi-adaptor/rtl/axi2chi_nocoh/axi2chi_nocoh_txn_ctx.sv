@@ -37,6 +37,11 @@ module axi2chi_nocoh_txn_ctx #(
   output logic [$clog2(ParentEntries)-1:0] rd_issue_parent_idx_o,
   output logic [AxiAddrWidth-1:0] rd_issue_addr_o,
   output logic [AxlenWidth-1:0] rd_issue_axi_beat_o,
+  output logic wr_issue_valid_o,
+  input logic wr_issue_ready_i,
+  output logic [$clog2(ParentEntries)-1:0] wr_issue_parent_idx_o,
+  output logic [AxiAddrWidth-1:0] wr_issue_addr_o,
+  output logic [AxlenWidth-1:0] wr_issue_axi_beat_o,
   input logic child_alloc_valid_i,
   output logic child_alloc_ready_o,
   input logic [$clog2(ParentEntries)-1:0] child_alloc_parent_idx_i,
@@ -54,6 +59,9 @@ module axi2chi_nocoh_txn_ctx #(
   input logic [2:0] child_event_type_i,
   input logic [ChiDbidWidth-1:0] child_event_dbid_i,
   input logic [1:0] child_event_resp_i,
+  output logic [$clog2(ParentEntries)-1:0] child_event_parent_idx_o,
+  output logic child_event_parent_complete_o,
+  output logic child_event_parent_error_o,
   input logic child_lookup_valid_i,
   input logic [$clog2(ChildEntries)-1:0] child_lookup_idx_i,
   output logic child_lookup_valid_o,
@@ -137,6 +145,7 @@ module axi2chi_nocoh_txn_ctx #(
   logic child_event_completes;
   logic child_completion_new;
   logic rd_issue_fire;
+  logic wr_issue_fire;
   logic [ParentIndexWidth-1:0] child_event_parent_idx;
   logic [BeatCountWidth-1:0] parent_completed_beat_next;
   logic [BeatCountWidth-1:0] parent_expected_beat_count;
@@ -169,6 +178,10 @@ module axi2chi_nocoh_txn_ctx #(
     rd_issue_parent_idx_o = '0;
     rd_issue_addr_o = '0;
     rd_issue_axi_beat_o = '0;
+    wr_issue_valid_o = 1'b0;
+    wr_issue_parent_idx_o = '0;
+    wr_issue_addr_o = '0;
+    wr_issue_axi_beat_o = '0;
     for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
       if (!rd_issue_valid_o && parent_q[idx].valid &&
           !parent_q[idx].is_write &&
@@ -178,6 +191,17 @@ module axi2chi_nocoh_txn_ctx #(
         rd_issue_parent_idx_o = ParentIndexWidth'(idx);
         rd_issue_axi_beat_o = parent_q[idx].next_issue_beat;
         rd_issue_addr_o = parent_q[idx].start_addr +
+            (AxiAddrWidth'(parent_q[idx].next_issue_beat) <<
+            parent_q[idx].size);
+      end
+      if (!wr_issue_valid_o && parent_q[idx].valid &&
+          parent_q[idx].is_write &&
+          parent_q[idx].next_issue_beat <= parent_q[idx].len &&
+          parent_q[idx].next_issue_beat == parent_q[idx].next_retire_beat) begin
+        wr_issue_valid_o = !rst;
+        wr_issue_parent_idx_o = ParentIndexWidth'(idx);
+        wr_issue_axi_beat_o = parent_q[idx].next_issue_beat;
+        wr_issue_addr_o = parent_q[idx].start_addr +
             (AxiAddrWidth'(parent_q[idx].next_issue_beat) <<
             parent_q[idx].size);
       end
@@ -241,6 +265,7 @@ module axi2chi_nocoh_txn_ctx #(
     child_release_fire = child_release_valid_i && child_release_ready_o;
     child_event_fire = child_event_valid_i && child_q[child_event_idx_i].valid;
     rd_issue_fire = rd_issue_valid_o && rd_issue_ready_i;
+    wr_issue_fire = wr_issue_valid_o && wr_issue_ready_i;
     child_lookup_valid_o = 1'b0;
     child_lookup_parent_idx_o = '0;
     child_lookup_axi_id_o = '0;
@@ -273,6 +298,12 @@ module axi2chi_nocoh_txn_ctx #(
         parent_q[child_event_parent_idx].completed_beat_count + BeatCountWidth'(1);
     parent_expected_beat_count =
         BeatCountWidth'(parent_q[child_event_parent_idx].len) + BeatCountWidth'(1);
+    child_event_parent_idx_o = child_event_parent_idx;
+    child_event_parent_complete_o = child_completion_new &&
+        child_q[child_event_idx_i].is_write &&
+        parent_completed_beat_next >= parent_expected_beat_count;
+    child_event_parent_error_o = parent_q[child_event_parent_idx].error_seen ||
+        child_event_type_i == kChildEventError || child_event_resp_i[1];
   end
 
   always_ff @(posedge clk) begin
@@ -358,6 +389,14 @@ module axi2chi_nocoh_txn_ctx #(
             parent_q[rd_issue_parent_idx_o].len;
       end
 
+      if (wr_issue_fire) begin
+        parent_q[wr_issue_parent_idx_o].next_issue_beat <=
+            parent_q[wr_issue_parent_idx_o].next_issue_beat + 1'b1;
+        parent_q[wr_issue_parent_idx_o].all_children_issued <=
+            parent_q[wr_issue_parent_idx_o].next_issue_beat ==
+            parent_q[wr_issue_parent_idx_o].len;
+      end
+
       if (child_release_fire) begin
         child_free_q[child_release_idx_i] <= 1'b1;
         txnid_valid_q[child_q[child_release_idx_i].txnid] <= 1'b0;
@@ -399,10 +438,8 @@ module axi2chi_nocoh_txn_ctx #(
               parent_completed_beat_next;
           parent_q[child_event_parent_idx].all_children_complete <=
               parent_completed_beat_next >= parent_expected_beat_count;
-          if (!child_q[child_event_idx_i].is_write) begin
-            parent_q[child_event_parent_idx].next_retire_beat <=
-                parent_q[child_event_parent_idx].next_retire_beat + 1'b1;
-          end
+          parent_q[child_event_parent_idx].next_retire_beat <=
+              parent_q[child_event_parent_idx].next_retire_beat + 1'b1;
         end
 
         if (child_event_type_i == kChildEventError || child_event_resp_i[1]) begin
