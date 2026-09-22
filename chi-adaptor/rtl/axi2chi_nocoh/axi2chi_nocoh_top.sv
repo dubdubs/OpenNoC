@@ -1,5 +1,4 @@
-// AXI-to-CHI non-coherent bridge top-level skeleton.
-// This module intentionally declares no functional logic or child instances.
+// AXI-to-CHI non-coherent bridge top-level integration shell.
 
 `default_nettype none
 
@@ -90,11 +89,517 @@ module axi2chi_nocoh_top #(
   logic core_rxrsp_valid;
   logic [RspFlitWidth-1:0] core_rxrsp_payload;
   logic core_rxrsp_ready;
+  logic rd_core_rxrsp_ready;
+  logic wr_core_rxrsp_ready;
   logic core_rxdat_valid;
   logic [DatFlitWidth-1:0] core_rxdat_payload;
   logic core_rxdat_ready;
+  logic slave_rd_admit_valid;
+  logic slave_rd_admit_ready;
+  logic [AxiIdWidth-1:0] slave_rd_admit_id;
+  logic [AxiAddrWidth-1:0] slave_rd_admit_addr;
+  logic [AxlenWidth-1:0] slave_rd_admit_len;
+  logic [AxsizeWidth-1:0] slave_rd_admit_size;
+  logic [1:0] slave_rd_admit_burst;
+  logic slave_wr_admit_valid;
+  logic [AxiIdWidth-1:0] slave_wr_admit_id;
+  logic [AxiAddrWidth-1:0] slave_wr_admit_addr;
+  logic [AxlenWidth-1:0] slave_wr_admit_len;
+  logic [AxsizeWidth-1:0] slave_wr_admit_size;
+  logic [1:0] slave_wr_admit_burst;
+  logic slave_wr_beat_valid;
+  logic [ParentIndexWidth-1:0] slave_wr_beat_parent_idx;
+  logic [AxiDataWidth-1:0] slave_wr_beat_data;
+  logic [AxiStrbWidth-1:0] slave_wr_beat_strb;
+  logic slave_wr_beat_last;
+  logic ctx_rd_admit_ready;
+  logic [ParentIndexWidth-1:0] ctx_rd_admit_parent_idx;
+  logic ctx_wr_admit_ready;
+  logic [ParentIndexWidth-1:0] ctx_wr_admit_parent_idx;
+  logic rd_issue_ready;
+  logic ctx_rd_issue_valid;
+  logic [ParentIndexWidth-1:0] ctx_rd_issue_parent_idx;
+  logic [AxiAddrWidth-1:0] ctx_rd_issue_addr;
+  logic [AxlenWidth-1:0] ctx_rd_issue_axi_beat;
+  logic rd_core_txreq_valid;
+  logic [ReqFlitWidth-1:0] rd_core_txreq_payload;
+  logic rd_core_txreq_ready;
+  logic rd_child_alloc_valid;
+  logic rd_child_alloc_ready;
+  logic [ParentIndexWidth-1:0] rd_child_alloc_parent_idx;
+  logic [AxiAddrWidth-1:0] rd_child_alloc_addr;
+  logic [AxlenWidth-1:0] rd_child_alloc_axi_beat;
+  logic [ChildIndexWidth-1:0] rd_child_alloc_idx;
+  logic [ChiTxnidWidth-1:0] rd_child_alloc_txnid;
+  logic rd_child_event_valid;
+  logic [ChildIndexWidth-1:0] rd_child_event_idx;
+  logic [2:0] rd_child_event_type;
+  logic rd_fragment_valid;
+  logic rd_fragment_ready;
+  logic [ChildIndexWidth-1:0] rd_fragment_child_idx;
+  logic [DatFlitWidth-1:0] rd_fragment_payload;
+  logic rd_rsp_valid;
+  logic rd_rsp_ready;
+  logic rd_rsp_parent_valid;
+  logic [ParentIndexWidth-1:0] rd_rsp_parent_idx;
+  logic [AxiIdWidth-1:0] rd_rsp_id;
+  logic [AxiDataWidth-1:0] rd_rsp_data;
+  logic [1:0] rd_rsp_resp;
+  logic rd_rsp_last;
+  logic wr_issue_ready;
+  logic wr_core_txreq_valid;
+  logic [ReqFlitWidth-1:0] wr_core_txreq_payload;
+  logic wr_core_txreq_ready;
+  logic wr_child_alloc_valid;
+  logic wr_child_alloc_ready;
+  logic [ParentIndexWidth-1:0] wr_child_alloc_parent_idx;
+  logic [AxiAddrWidth-1:0] wr_child_alloc_addr;
+  logic [ChildIndexWidth-1:0] wr_child_alloc_idx;
+  logic [ChiTxnidWidth-1:0] wr_child_alloc_txnid;
+  logic wr_child_event_valid;
+  logic [ChildIndexWidth-1:0] wr_child_event_idx;
+  logic [2:0] wr_child_event_type;
+  logic [ChiDbidWidth-1:0] wr_child_event_dbid;
+  logic [1:0] wr_child_event_resp;
+  logic wr_data_fragment_valid;
+  logic wr_data_fragment_ready;
+  logic wr_beat_ready;
+  logic [ChildIndexWidth-1:0] wr_data_fragment_child_idx;
+  logic [ChiDataWidth-1:0] wr_data_fragment_data;
+  logic [ChiBeWidth-1:0] wr_data_fragment_be;
+  logic [DatFlitWidth-1:0] wr_fragment_payload;
+  logic child_alloc_valid;
+  logic child_alloc_ready;
+  logic child_alloc_is_write;
+  logic [ParentIndexWidth-1:0] child_alloc_parent_idx;
+  logic [AxiAddrWidth-1:0] child_alloc_addr;
+  logic [ChildIndexWidth-1:0] child_alloc_idx;
+  logic [ChiTxnidWidth-1:0] child_alloc_txnid;
+  logic child_event_valid;
+  logic [ChildIndexWidth-1:0] child_event_idx;
+  logic [2:0] child_event_type;
+  logic [ChiDbidWidth-1:0] child_event_dbid;
+  logic [1:0] child_event_resp;
+  logic child_lookup_valid;
+  logic [ParentIndexWidth-1:0] child_lookup_parent_idx;
+  logic [AxiIdWidth-1:0] child_lookup_axi_id;
+  logic child_lookup_is_write;
+  logic child_lookup_last;
+  logic parent_retire_valid;
+  logic [ParentIndexWidth-1:0] parent_retire_idx;
+  logic wr_rsp_valid;
+  logic wr_rsp_ready;
+  logic [AxiIdWidth-1:0] wr_rsp_id;
+  logic [1:0] wr_rsp_resp;
+  logic wr_rsp_hold_valid_q;
+  logic wr_outstanding_q;
+  logic wr_admit_fire;
+  logic [AxiIdWidth-1:0] wr_active_axi_id_q;
+  logic [ParentIndexWidth-1:0] wr_active_parent_idx_q;
+  logic [1:0] wr_rsp_resp_q;
+  logic unused_wr_rsp_ready;
+  logic unused_child_release_ready;
+  logic unused_parent_retire_ready;
 
-  // Child instances are added only after each boundary is verified in Step 4.
+  assign rst = !aresetn;
+
+  assign slave_rd_admit_ready = ctx_rd_admit_ready && core_txreq_ready;
+  assign core_txreq_valid = rd_core_txreq_valid || wr_core_txreq_valid;
+  assign core_txreq_payload =
+      rd_core_txreq_valid ? rd_core_txreq_payload : wr_core_txreq_payload;
+  assign rd_core_txreq_ready = core_txreq_ready && rd_core_txreq_valid;
+  assign wr_core_txreq_ready =
+      core_txreq_ready && !rd_core_txreq_valid && wr_core_txreq_valid;
+  assign wr_rsp_valid = wr_rsp_hold_valid_q;
+  assign wr_rsp_id = wr_active_axi_id_q;
+  assign wr_rsp_resp = wr_rsp_resp_q;
+  assign wr_admit_fire = slave_wr_admit_valid && ctx_wr_admit_ready &&
+      wr_issue_ready && core_txreq_ready && !wr_outstanding_q;
+  // Preserve an RXRSP flit at the CHI boundary until the engine that owns its
+  // TxnID and expected response opcode can accept it.
+  assign core_rxrsp_ready = rd_core_rxrsp_ready || wr_core_rxrsp_ready;
+  assign wr_fragment_payload = '0 |
+      (DatFlitWidth'(wr_data_fragment_be) << 64) |
+      (DatFlitWidth'(wr_data_fragment_data) << 128);
+  assign child_alloc_valid = rd_child_alloc_valid || wr_child_alloc_valid;
+  assign child_alloc_is_write = !rd_child_alloc_valid && wr_child_alloc_valid;
+  assign child_alloc_parent_idx =
+      rd_child_alloc_valid ? rd_child_alloc_parent_idx : wr_child_alloc_parent_idx;
+  assign child_alloc_addr =
+      rd_child_alloc_valid ? rd_child_alloc_addr : wr_child_alloc_addr;
+  assign rd_child_alloc_ready = child_alloc_ready && rd_child_alloc_valid;
+  assign wr_child_alloc_ready =
+      child_alloc_ready && !rd_child_alloc_valid && wr_child_alloc_valid;
+  assign rd_child_alloc_idx = child_alloc_idx;
+  assign wr_child_alloc_idx = child_alloc_idx;
+  assign rd_child_alloc_txnid = child_alloc_txnid;
+  assign wr_child_alloc_txnid = child_alloc_txnid;
+  assign child_event_valid = rd_child_event_valid || wr_child_event_valid;
+  assign child_event_idx =
+      rd_child_event_valid ? rd_child_event_idx : wr_child_event_idx;
+  assign child_event_type =
+      rd_child_event_valid ? rd_child_event_type : wr_child_event_type;
+  assign child_event_dbid = rd_child_event_valid ? '0 : wr_child_event_dbid;
+  assign child_event_resp = rd_child_event_valid ? '0 : wr_child_event_resp;
+  assign parent_retire_valid =
+      (rd_rsp_valid && rd_rsp_ready && rd_rsp_parent_valid && rd_rsp_last) ||
+      (wr_rsp_valid && wr_rsp_ready);
+  assign parent_retire_idx =
+      (rd_rsp_valid && rd_rsp_ready && rd_rsp_parent_valid) ?
+      rd_rsp_parent_idx : wr_active_parent_idx_q;
+
+  axi2chi_nocoh_slave #(
+    .AxiAddrWidth(AxiAddrWidth),
+    .AxiDataWidth(AxiDataWidth),
+    .AxiIdWidth(AxiIdWidth),
+    .AxlenWidth(AxlenWidth),
+    .AxsizeWidth(AxsizeWidth),
+    .ParentEntries(ParentEntries)
+  ) slave (
+    .clk(clk),
+    .rst(rst),
+    .s_axi_awid(s_axi_awid),
+    .s_axi_awaddr(s_axi_awaddr),
+    .s_axi_awlen(s_axi_awlen),
+    .s_axi_awsize(s_axi_awsize),
+    .s_axi_awburst(s_axi_awburst),
+    .s_axi_awvalid(s_axi_awvalid),
+    .s_axi_awready(s_axi_awready),
+    .s_axi_wdata(s_axi_wdata),
+    .s_axi_wstrb(s_axi_wstrb),
+    .s_axi_wlast(s_axi_wlast),
+    .s_axi_wvalid(s_axi_wvalid),
+    .s_axi_wready(s_axi_wready),
+    .s_axi_bid(s_axi_bid),
+    .s_axi_bresp(s_axi_bresp),
+    .s_axi_bvalid(s_axi_bvalid),
+    .s_axi_bready(s_axi_bready),
+    .s_axi_arid(s_axi_arid),
+    .s_axi_araddr(s_axi_araddr),
+    .s_axi_arlen(s_axi_arlen),
+    .s_axi_arsize(s_axi_arsize),
+    .s_axi_arburst(s_axi_arburst),
+    .s_axi_arvalid(s_axi_arvalid),
+    .s_axi_arready(s_axi_arready),
+    .s_axi_rid(s_axi_rid),
+    .s_axi_rdata(s_axi_rdata),
+    .s_axi_rresp(s_axi_rresp),
+    .s_axi_rlast(s_axi_rlast),
+    .s_axi_rvalid(s_axi_rvalid),
+    .s_axi_rready(s_axi_rready),
+    .rd_admit_valid_o(slave_rd_admit_valid),
+    .rd_admit_ready_i(slave_rd_admit_ready),
+    .rd_admit_id_o(slave_rd_admit_id),
+    .rd_admit_addr_o(slave_rd_admit_addr),
+    .rd_admit_len_o(slave_rd_admit_len),
+    .rd_admit_size_o(slave_rd_admit_size),
+    .rd_admit_burst_o(slave_rd_admit_burst),
+    .wr_admit_valid_o(slave_wr_admit_valid),
+    .wr_admit_ready_i(ctx_wr_admit_ready && wr_issue_ready && core_txreq_ready &&
+        !wr_outstanding_q),
+    .wr_admit_parent_idx_i(ctx_wr_admit_parent_idx),
+    .wr_admit_id_o(slave_wr_admit_id),
+    .wr_admit_addr_o(slave_wr_admit_addr),
+    .wr_admit_len_o(slave_wr_admit_len),
+    .wr_admit_size_o(slave_wr_admit_size),
+    .wr_admit_burst_o(slave_wr_admit_burst),
+    .wr_beat_valid_o(slave_wr_beat_valid),
+    .wr_beat_ready_i(wr_beat_ready),
+    .wr_beat_parent_idx_o(slave_wr_beat_parent_idx),
+    .wr_beat_data_o(slave_wr_beat_data),
+    .wr_beat_strb_o(slave_wr_beat_strb),
+    .wr_beat_last_o(slave_wr_beat_last),
+    .rd_rsp_valid_i(rd_rsp_valid),
+    .rd_rsp_ready_o(rd_rsp_ready),
+    .rd_rsp_id_i(rd_rsp_id),
+    .rd_rsp_data_i(rd_rsp_data),
+    .rd_rsp_resp_i(rd_rsp_resp),
+    .rd_rsp_last_i(rd_rsp_last),
+    .wr_rsp_valid_i(wr_rsp_valid),
+    .wr_rsp_ready_o(wr_rsp_ready),
+    .wr_rsp_id_i(wr_rsp_id),
+    .wr_rsp_resp_i(wr_rsp_resp)
+  );
+
+  axi2chi_nocoh_txn_ctx #(
+    .AxiAddrWidth(AxiAddrWidth),
+    .AxiIdWidth(AxiIdWidth),
+    .AxlenWidth(AxlenWidth),
+    .AxsizeWidth(AxsizeWidth),
+    .ChiTxnidWidth(ChiTxnidWidth),
+    .ChiDbidWidth(ChiDbidWidth),
+    .ParentEntries(ParentEntries),
+    .ChildEntries(ChildEntries)
+  ) txn_ctx (
+    .clk(clk),
+    .rst(rst),
+    .rd_admit_valid_i(slave_rd_admit_valid && core_txreq_ready),
+    .rd_admit_ready_o(ctx_rd_admit_ready),
+    .rd_admit_id_i(slave_rd_admit_id),
+    .rd_admit_addr_i(slave_rd_admit_addr),
+    .rd_admit_len_i(slave_rd_admit_len),
+    .rd_admit_size_i(slave_rd_admit_size),
+    .rd_admit_burst_i(slave_rd_admit_burst),
+    .wr_admit_valid_i(slave_wr_admit_valid && wr_issue_ready &&
+        core_txreq_ready &&
+        !wr_outstanding_q),
+    .wr_admit_ready_o(ctx_wr_admit_ready),
+    .wr_admit_id_i(slave_wr_admit_id),
+    .wr_admit_addr_i(slave_wr_admit_addr),
+    .wr_admit_len_i(slave_wr_admit_len),
+    .wr_admit_size_i(slave_wr_admit_size),
+    .wr_admit_burst_i(slave_wr_admit_burst),
+    .rd_admit_parent_idx_o(ctx_rd_admit_parent_idx),
+    .wr_admit_parent_idx_o(ctx_wr_admit_parent_idx),
+    .rd_issue_valid_o(ctx_rd_issue_valid),
+    .rd_issue_ready_i(rd_issue_ready),
+    .rd_issue_parent_idx_o(ctx_rd_issue_parent_idx),
+    .rd_issue_addr_o(ctx_rd_issue_addr),
+    .rd_issue_axi_beat_o(ctx_rd_issue_axi_beat),
+    .child_alloc_valid_i(child_alloc_valid),
+    .child_alloc_ready_o(child_alloc_ready),
+    .child_alloc_parent_idx_i(child_alloc_parent_idx),
+    .child_alloc_is_write_i(child_alloc_is_write),
+    .child_alloc_axi_beat_i(rd_child_alloc_valid ?
+        rd_child_alloc_axi_beat : '0),
+    .child_alloc_addr_i(child_alloc_addr),
+    .child_alloc_frag_idx_i('0),
+    .child_alloc_idx_o(child_alloc_idx),
+    .child_alloc_txnid_o(child_alloc_txnid),
+    .child_release_valid_i(child_event_valid),
+    .child_release_ready_o(unused_child_release_ready),
+    .child_release_idx_i(child_event_idx),
+    .child_event_valid_i(child_event_valid),
+    .child_event_idx_i(child_event_idx),
+    .child_event_type_i(child_event_type),
+    .child_event_dbid_i(child_event_dbid),
+    .child_event_resp_i(child_event_resp),
+    .child_lookup_valid_i(rd_fragment_valid),
+    .child_lookup_idx_i(rd_fragment_child_idx),
+    .child_lookup_valid_o(child_lookup_valid),
+    .child_lookup_parent_idx_o(child_lookup_parent_idx),
+    .child_lookup_axi_id_o(child_lookup_axi_id),
+    .child_lookup_is_write_o(child_lookup_is_write),
+    .child_lookup_last_o(child_lookup_last),
+    .parent_retire_valid_i(parent_retire_valid),
+    .parent_retire_idx_i(parent_retire_idx),
+    .parent_retire_ready_o(unused_parent_retire_ready)
+  );
+
+  axi2chi_nocoh_rd_engine #(
+    .AxiAddrWidth(AxiAddrWidth),
+    .AxiIdWidth(AxiIdWidth),
+    .ChiTxnidWidth(ChiTxnidWidth),
+    .ReqFlitWidth(ReqFlitWidth),
+    .RspFlitWidth(RspFlitWidth),
+    .DatFlitWidth(DatFlitWidth),
+    .ParentEntries(ParentEntries),
+    .ChildEntries(ChildEntries)
+  ) rd_engine (
+    .clk(clk),
+    .rst(rst),
+    .rd_issue_valid_i(ctx_rd_issue_valid),
+    .rd_issue_ready_o(rd_issue_ready),
+    .rd_issue_parent_idx_i(ctx_rd_issue_parent_idx),
+    .rd_issue_addr_i(ctx_rd_issue_addr),
+    .rd_issue_axi_beat_i(ctx_rd_issue_axi_beat),
+    .child_alloc_valid_o(rd_child_alloc_valid),
+    .child_alloc_ready_i(rd_child_alloc_ready),
+    .child_alloc_parent_idx_o(rd_child_alloc_parent_idx),
+    .child_alloc_addr_o(rd_child_alloc_addr),
+    .child_alloc_axi_beat_o(rd_child_alloc_axi_beat),
+    .child_alloc_idx_i(rd_child_alloc_idx),
+    .child_alloc_txnid_i(rd_child_alloc_txnid),
+    .child_event_valid_o(rd_child_event_valid),
+    .child_event_idx_o(rd_child_event_idx),
+    .child_event_type_o(rd_child_event_type),
+    .txreq_valid_o(rd_core_txreq_valid),
+    .txreq_payload_o(rd_core_txreq_payload),
+    .txreq_ready_i(rd_core_txreq_ready),
+    .rxdat_valid_i(core_rxdat_valid),
+    .rxdat_payload_i(core_rxdat_payload),
+    .rxdat_ready_o(core_rxdat_ready),
+    .rxrsp_valid_i(core_rxrsp_valid),
+    .rxrsp_payload_i(core_rxrsp_payload),
+    .rxrsp_ready_o(rd_core_rxrsp_ready),
+    .rd_fragment_valid_o(rd_fragment_valid),
+    .rd_fragment_child_idx_o(rd_fragment_child_idx),
+    .rd_fragment_payload_o(rd_fragment_payload),
+    .rd_fragment_ready_i(rd_fragment_ready)
+  );
+
+  axi2chi_nocoh_rd_data #(
+    .AxiDataWidth(AxiDataWidth),
+    .AxiIdWidth(AxiIdWidth),
+    .ChiDataWidth(ChiDataWidth),
+    .ParentEntries(ParentEntries),
+    .ChildEntries(ChildEntries)
+  ) rd_data (
+    .clk(clk),
+    .rst(rst),
+    .fragment_valid_i(rd_fragment_valid),
+    .fragment_ready_o(rd_fragment_ready),
+    .fragment_child_idx_i(rd_fragment_child_idx),
+    .fragment_lookup_valid_i(child_lookup_valid && !child_lookup_is_write),
+    .fragment_parent_idx_i(child_lookup_parent_idx),
+    .fragment_axi_id_i(child_lookup_axi_id),
+    .fragment_data_i(rd_fragment_payload[64 +: ChiDataWidth]),
+    .fragment_be_i(rd_fragment_payload[32 +: ChiBeWidth]),
+    .fragment_resp_i(rd_fragment_payload[26 +: 2]),
+    .fragment_last_i(child_lookup_last),
+    .rd_rsp_parent_valid_o(rd_rsp_parent_valid),
+    .rd_rsp_parent_idx_o(rd_rsp_parent_idx),
+    .rd_rsp_valid_o(rd_rsp_valid),
+    .rd_rsp_ready_i(rd_rsp_ready),
+    .rd_rsp_id_o(rd_rsp_id),
+    .rd_rsp_data_o(rd_rsp_data),
+    .rd_rsp_resp_o(rd_rsp_resp),
+    .rd_rsp_last_o(rd_rsp_last)
+  );
+
+  axi2chi_nocoh_wr_data #(
+    .AxiDataWidth(AxiDataWidth),
+    .ChiDataWidth(ChiDataWidth),
+    .ParentEntries(ParentEntries),
+    .ChildEntries(ChildEntries)
+  ) wr_data (
+    .clk(clk),
+    .rst(rst),
+    .wr_beat_valid_i(slave_wr_beat_valid),
+    .wr_beat_ready_o(wr_beat_ready),
+    .wr_beat_parent_idx_i(slave_wr_beat_parent_idx),
+    .wr_beat_data_i(slave_wr_beat_data),
+    .wr_beat_strb_i(slave_wr_beat_strb),
+    .wr_beat_last_i(slave_wr_beat_last),
+    .child_bind_valid_i(wr_child_alloc_valid && wr_child_alloc_ready),
+    .child_bind_idx_i(wr_child_alloc_idx),
+    .txdat_fragment_valid_o(wr_data_fragment_valid),
+    .txdat_fragment_ready_i(wr_data_fragment_ready),
+    .txdat_fragment_child_idx_o(wr_data_fragment_child_idx),
+    .txdat_fragment_data_o(wr_data_fragment_data),
+    .txdat_fragment_be_o(wr_data_fragment_be)
+  );
+
+  axi2chi_nocoh_wr_engine #(
+    .AxiAddrWidth(AxiAddrWidth),
+    .ChiTxnidWidth(ChiTxnidWidth),
+    .ChiDbidWidth(ChiDbidWidth),
+    .ReqFlitWidth(ReqFlitWidth),
+    .RspFlitWidth(RspFlitWidth),
+    .DatFlitWidth(DatFlitWidth),
+    .ParentEntries(ParentEntries),
+    .ChildEntries(ChildEntries)
+  ) wr_engine (
+    .clk(clk),
+    .rst(rst),
+    .wr_issue_valid_i(slave_wr_admit_valid && ctx_wr_admit_ready &&
+        core_txreq_ready &&
+        !wr_outstanding_q),
+    .wr_issue_ready_o(wr_issue_ready),
+    .wr_issue_parent_idx_i(ctx_wr_admit_parent_idx),
+    .wr_issue_addr_i(slave_wr_admit_addr),
+    .child_alloc_valid_o(wr_child_alloc_valid),
+    .child_alloc_ready_i(wr_child_alloc_ready),
+    .child_alloc_parent_idx_o(wr_child_alloc_parent_idx),
+    .child_alloc_addr_o(wr_child_alloc_addr),
+    .child_alloc_idx_i(wr_child_alloc_idx),
+    .child_alloc_txnid_i(wr_child_alloc_txnid),
+    .child_event_valid_o(wr_child_event_valid),
+    .child_event_idx_o(wr_child_event_idx),
+    .child_event_type_o(wr_child_event_type),
+    .child_event_dbid_o(wr_child_event_dbid),
+    .child_event_resp_o(wr_child_event_resp),
+    .txreq_valid_o(wr_core_txreq_valid),
+    .txreq_payload_o(wr_core_txreq_payload),
+    .txreq_ready_i(wr_core_txreq_ready),
+    .txdat_valid_o(core_txdat_valid),
+    .txdat_payload_o(core_txdat_payload),
+    .txdat_ready_i(core_txdat_ready),
+    .rxrsp_valid_i(core_rxrsp_valid),
+    .rxrsp_payload_i(core_rxrsp_payload),
+    .rxrsp_ready_o(wr_core_rxrsp_ready),
+    .wr_fragment_valid_i(wr_data_fragment_valid),
+    .wr_fragment_child_idx_i(wr_data_fragment_child_idx),
+    .wr_fragment_payload_i(wr_fragment_payload),
+    .wr_fragment_ready_o(wr_data_fragment_ready)
+  );
+
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      wr_rsp_hold_valid_q <= 1'b0;
+      wr_outstanding_q <= 1'b0;
+      wr_active_axi_id_q <= '0;
+      wr_active_parent_idx_q <= '0;
+      wr_rsp_resp_q <= '0;
+    end else begin
+      if (wr_admit_fire) begin
+        wr_outstanding_q <= 1'b1;
+        wr_active_axi_id_q <= slave_wr_admit_id;
+        wr_active_parent_idx_q <= ctx_wr_admit_parent_idx;
+      end
+
+      if (wr_child_event_valid) begin
+        wr_rsp_hold_valid_q <= 1'b1;
+        wr_rsp_resp_q <= wr_child_event_type == 3'd5 ? 2'b10 : 2'b00;
+      end else if (wr_rsp_valid && wr_rsp_ready) begin
+        wr_rsp_hold_valid_q <= 1'b0;
+        wr_outstanding_q <= 1'b0;
+      end
+    end
+  end
+
+`ifndef SYNTHESIS
+  always_ff @(posedge clk) begin
+    if (!rst) begin
+      assert (!(wr_child_event_valid && wr_rsp_hold_valid_q &&
+          !(wr_rsp_valid && wr_rsp_ready)))
+      else $fatal(1, "Write response completed while B response is still pending");
+    end
+  end
+`endif
+
+  axi2chi_chi_link #(
+    .ReqFlitWidth(ReqFlitWidth),
+    .RspFlitWidth(RspFlitWidth),
+    .DatFlitWidth(DatFlitWidth),
+    .ReqRxDepth(2),
+    .RspRxDepth(2),
+    .DatRxDepth(2)
+  ) chi_link (
+    .clk(clk),
+    .rst(rst),
+    .core_txreq_valid_i(core_txreq_valid),
+    .core_txreq_flit_i(core_txreq_payload),
+    .core_txreq_ready_o(core_txreq_ready),
+    .core_txdat_valid_i(core_txdat_valid),
+    .core_txdat_flit_i(core_txdat_payload),
+    .core_txdat_ready_o(core_txdat_ready),
+    .core_rxrsp_valid_o(core_rxrsp_valid),
+    .core_rxrsp_flit_o(core_rxrsp_payload),
+    .core_rxrsp_ready_i(core_rxrsp_ready),
+    .core_rxdat_valid_o(core_rxdat_valid),
+    .core_rxdat_flit_o(core_rxdat_payload),
+    .core_rxdat_ready_i(core_rxdat_ready),
+    .chi_txreq_flitv_o(chi_txreq_flitv_o),
+    .chi_txreq_flit_o(chi_txreq_flit_o),
+    .chi_txreq_lcrdv_i(chi_txreq_lcrdv_i),
+    .chi_txdat_flitv_o(chi_txdat_flitv_o),
+    .chi_txdat_flit_o(chi_txdat_flit_o),
+    .chi_txdat_lcrdv_i(chi_txdat_lcrdv_i),
+    .chi_txrsp_flitv_o(chi_txrsp_flitv_o),
+    .chi_txrsp_flit_o(chi_txrsp_flit_o),
+    .chi_txrsp_lcrdv_i(chi_txrsp_lcrdv_i),
+    .chi_rxrsp_flitv_i(chi_rxrsp_flitv_i),
+    .chi_rxrsp_flit_i(chi_rxrsp_flit_i),
+    .chi_rxrsp_lcrdv_o(chi_rxrsp_lcrdv_o),
+    .chi_rxdat_flitv_i(chi_rxdat_flitv_i),
+    .chi_rxdat_flit_i(chi_rxdat_flit_i),
+    .chi_rxdat_lcrdv_o(chi_rxdat_lcrdv_o),
+    .chi_txlinkactivereq_o(chi_txlinkactivereq_o),
+    .chi_txlinkactiveack_i(chi_txlinkactiveack_i),
+    .chi_rxlinkactivereq_i(chi_rxlinkactivereq_i),
+    .chi_rxlinkactiveack_o(chi_rxlinkactiveack_o)
+  );
 
 endmodule
 

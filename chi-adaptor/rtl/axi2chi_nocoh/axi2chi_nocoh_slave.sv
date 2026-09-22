@@ -145,6 +145,18 @@ module axi2chi_nocoh_slave #(
         wr_beat_strb_o = s_axi_wstrb;
         wr_beat_last_o = s_axi_wlast;
       end
+
+      s_axi_rvalid = rd_rsp_valid_i;
+      s_axi_rid = rd_rsp_id_i;
+      s_axi_rdata = rd_rsp_data_i;
+      s_axi_rresp = rd_rsp_resp_i;
+      s_axi_rlast = rd_rsp_last_i;
+      rd_rsp_ready_o = s_axi_rready;
+
+      s_axi_bvalid = wr_rsp_valid_i;
+      s_axi_bid = wr_rsp_id_i;
+      s_axi_bresp = wr_rsp_resp_i;
+      wr_rsp_ready_o = s_axi_bready;
     end
 
     aw_order_push = s_axi_awvalid && s_axi_awready;
@@ -194,6 +206,18 @@ module axi2chi_nocoh_slave #(
       end
     end
   end
+
+`ifndef SYNTHESIS
+  // WLAST is checked against the accepted AWLEN-derived beat count.  The
+  // assertion is intentionally gated by the W handshake so a stalled source
+  // may hold either value stable without being reported as a protocol error.
+  always_ff @(posedge clk) begin
+    if (!rst) begin
+      assert (!(wr_beat_fire && (s_axi_wlast != active_w_expected_last)))
+      else $fatal(1, "AXI WLAST does not match the admitted AWLEN");
+    end
+  end
+`endif
 
 endmodule
 
