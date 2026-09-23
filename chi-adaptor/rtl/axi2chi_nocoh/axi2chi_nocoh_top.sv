@@ -121,10 +121,12 @@ module axi2chi_nocoh_top #(
   logic [ParentIndexWidth-1:0] ctx_rd_issue_parent_idx;
   logic [AxiAddrWidth-1:0] ctx_rd_issue_addr;
   logic [AxlenWidth-1:0] ctx_rd_issue_axi_beat;
+  logic [1:0] ctx_rd_issue_frag_idx;
   logic ctx_wr_issue_valid;
   logic [ParentIndexWidth-1:0] ctx_wr_issue_parent_idx;
   logic [AxiAddrWidth-1:0] ctx_wr_issue_addr;
   logic [AxlenWidth-1:0] ctx_wr_issue_axi_beat;
+  logic [1:0] ctx_wr_issue_frag_idx;
   logic rd_core_txreq_valid;
   logic [ReqFlitWidth-1:0] rd_core_txreq_payload;
   logic rd_core_txreq_ready;
@@ -133,6 +135,7 @@ module axi2chi_nocoh_top #(
   logic [ParentIndexWidth-1:0] rd_child_alloc_parent_idx;
   logic [AxiAddrWidth-1:0] rd_child_alloc_addr;
   logic [AxlenWidth-1:0] rd_child_alloc_axi_beat;
+  logic [1:0] rd_child_alloc_frag_idx;
   logic [ChildIndexWidth-1:0] rd_child_alloc_idx;
   logic [ChiTxnidWidth-1:0] rd_child_alloc_txnid;
   logic rd_child_event_valid;
@@ -159,6 +162,7 @@ module axi2chi_nocoh_top #(
   logic [ParentIndexWidth-1:0] wr_child_alloc_parent_idx;
   logic [AxiAddrWidth-1:0] wr_child_alloc_addr;
   logic [AxlenWidth-1:0] wr_child_alloc_axi_beat;
+  logic [1:0] wr_child_alloc_frag_idx;
   logic [ChildIndexWidth-1:0] wr_child_alloc_idx;
   logic [ChiTxnidWidth-1:0] wr_child_alloc_txnid;
   logic wr_child_event_valid;
@@ -180,6 +184,10 @@ module axi2chi_nocoh_top #(
   logic [AxiAddrWidth-1:0] child_alloc_addr;
   logic [ChildIndexWidth-1:0] child_alloc_idx;
   logic [ChiTxnidWidth-1:0] child_alloc_txnid;
+  logic child_alloc_last_fragment;
+  logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_alloc_axi_byte_offset;
+  logic [$clog2(CacheLineBytes)-1:0] child_alloc_line_byte_offset;
+  logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_alloc_fragment_byte_count;
   logic child_event_valid;
   logic [ChildIndexWidth-1:0] child_event_idx;
   logic [2:0] child_event_type;
@@ -193,6 +201,9 @@ module axi2chi_nocoh_top #(
   logic [AxiIdWidth-1:0] child_lookup_axi_id;
   logic child_lookup_is_write;
   logic child_lookup_last;
+  logic [AxlenWidth-1:0] child_lookup_axi_beat;
+  logic [1:0] child_lookup_frag_idx;
+  logic child_lookup_last_fragment;
   logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_lookup_axi_byte_offset;
   logic [$clog2(CacheLineBytes)-1:0] child_lookup_line_byte_offset;
   logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_lookup_fragment_byte_count;
@@ -366,11 +377,13 @@ module axi2chi_nocoh_top #(
     .rd_issue_parent_idx_o(ctx_rd_issue_parent_idx),
     .rd_issue_addr_o(ctx_rd_issue_addr),
     .rd_issue_axi_beat_o(ctx_rd_issue_axi_beat),
+    .rd_issue_frag_idx_o(ctx_rd_issue_frag_idx),
     .wr_issue_valid_o(ctx_wr_issue_valid),
     .wr_issue_ready_i(wr_issue_ready),
     .wr_issue_parent_idx_o(ctx_wr_issue_parent_idx),
     .wr_issue_addr_o(ctx_wr_issue_addr),
     .wr_issue_axi_beat_o(ctx_wr_issue_axi_beat),
+    .wr_issue_frag_idx_o(ctx_wr_issue_frag_idx),
     .child_alloc_valid_i(child_alloc_valid),
     .child_alloc_ready_o(child_alloc_ready),
     .child_alloc_parent_idx_i(child_alloc_parent_idx),
@@ -378,9 +391,14 @@ module axi2chi_nocoh_top #(
     .child_alloc_axi_beat_i(rd_child_alloc_valid ?
         rd_child_alloc_axi_beat : wr_child_alloc_axi_beat),
     .child_alloc_addr_i(child_alloc_addr),
-    .child_alloc_frag_idx_i('0),
+    .child_alloc_frag_idx_i(rd_child_alloc_valid ? rd_child_alloc_frag_idx :
+        wr_child_alloc_frag_idx),
     .child_alloc_idx_o(child_alloc_idx),
     .child_alloc_txnid_o(child_alloc_txnid),
+    .child_alloc_last_fragment_o(child_alloc_last_fragment),
+    .child_alloc_axi_byte_offset_o(child_alloc_axi_byte_offset),
+    .child_alloc_line_byte_offset_o(child_alloc_line_byte_offset),
+    .child_alloc_fragment_byte_count_o(child_alloc_fragment_byte_count),
     .child_release_valid_i(child_event_valid),
     .child_release_ready_o(unused_child_release_ready),
     .child_release_idx_i(child_event_idx),
@@ -399,6 +417,9 @@ module axi2chi_nocoh_top #(
     .child_lookup_axi_id_o(child_lookup_axi_id),
     .child_lookup_is_write_o(child_lookup_is_write),
     .child_lookup_last_o(child_lookup_last),
+    .child_lookup_axi_beat_o(child_lookup_axi_beat),
+    .child_lookup_frag_idx_o(child_lookup_frag_idx),
+    .child_lookup_last_fragment_o(child_lookup_last_fragment),
     .child_lookup_axi_byte_offset_o(child_lookup_axi_byte_offset),
     .child_lookup_line_byte_offset_o(child_lookup_line_byte_offset),
     .child_lookup_fragment_byte_count_o(child_lookup_fragment_byte_count),
@@ -424,11 +445,13 @@ module axi2chi_nocoh_top #(
     .rd_issue_parent_idx_i(ctx_rd_issue_parent_idx),
     .rd_issue_addr_i(ctx_rd_issue_addr),
     .rd_issue_axi_beat_i(ctx_rd_issue_axi_beat),
+    .rd_issue_frag_idx_i(ctx_rd_issue_frag_idx),
     .child_alloc_valid_o(rd_child_alloc_valid),
     .child_alloc_ready_i(rd_child_alloc_ready),
     .child_alloc_parent_idx_o(rd_child_alloc_parent_idx),
     .child_alloc_addr_o(rd_child_alloc_addr),
     .child_alloc_axi_beat_o(rd_child_alloc_axi_beat),
+    .child_alloc_frag_idx_o(rd_child_alloc_frag_idx),
     .child_alloc_idx_i(rd_child_alloc_idx),
     .child_alloc_txnid_i(rd_child_alloc_txnid),
     .child_event_valid_o(rd_child_event_valid),
@@ -469,6 +492,8 @@ module axi2chi_nocoh_top #(
     .fragment_be_i(rd_fragment_payload[32 +: ChiBeWidth]),
     .fragment_resp_i(rd_fragment_payload[26 +: 2]),
     .fragment_last_i(child_lookup_last),
+    .fragment_last_fragment_i(child_lookup_last_fragment),
+    .fragment_idx_i(child_lookup_frag_idx),
     .fragment_axi_byte_offset_i(child_lookup_axi_byte_offset),
     .fragment_line_byte_offset_i(child_lookup_line_byte_offset),
     .fragment_byte_count_i(child_lookup_fragment_byte_count),
@@ -485,6 +510,7 @@ module axi2chi_nocoh_top #(
   axi2chi_nocoh_wr_data #(
     .AxiDataWidth(AxiDataWidth),
     .ChiDataWidth(ChiDataWidth),
+    .CacheLineBytes(CacheLineBytes),
     .ParentEntries(ParentEntries),
     .ChildEntries(ChildEntries)
   ) wr_data (
@@ -498,6 +524,10 @@ module axi2chi_nocoh_top #(
     .wr_beat_last_i(slave_wr_beat_last),
     .child_bind_valid_i(wr_child_alloc_valid && wr_child_alloc_ready),
     .child_bind_idx_i(wr_child_alloc_idx),
+    .child_bind_last_fragment_i(child_alloc_last_fragment),
+    .child_bind_axi_byte_offset_i(child_alloc_axi_byte_offset),
+    .child_bind_line_byte_offset_i(child_alloc_line_byte_offset),
+    .child_bind_fragment_byte_count_i(child_alloc_fragment_byte_count),
     .txdat_fragment_valid_o(wr_data_fragment_valid),
     .txdat_fragment_ready_i(wr_data_fragment_ready),
     .txdat_fragment_child_idx_o(wr_data_fragment_child_idx),
@@ -522,11 +552,13 @@ module axi2chi_nocoh_top #(
     .wr_issue_parent_idx_i(ctx_wr_issue_parent_idx),
     .wr_issue_addr_i(ctx_wr_issue_addr),
     .wr_issue_axi_beat_i(ctx_wr_issue_axi_beat),
+    .wr_issue_frag_idx_i(ctx_wr_issue_frag_idx),
     .child_alloc_valid_o(wr_child_alloc_valid),
     .child_alloc_ready_i(wr_child_alloc_ready),
     .child_alloc_parent_idx_o(wr_child_alloc_parent_idx),
     .child_alloc_addr_o(wr_child_alloc_addr),
     .child_alloc_axi_beat_o(wr_child_alloc_axi_beat),
+    .child_alloc_frag_idx_o(wr_child_alloc_frag_idx),
     .child_alloc_idx_i(wr_child_alloc_idx),
     .child_alloc_txnid_i(wr_child_alloc_txnid),
     .child_event_valid_o(wr_child_event_valid),

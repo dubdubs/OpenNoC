@@ -39,11 +39,13 @@ module axi2chi_nocoh_txn_ctx #(
   output logic [$clog2(ParentEntries)-1:0] rd_issue_parent_idx_o,
   output logic [AxiAddrWidth-1:0] rd_issue_addr_o,
   output logic [AxlenWidth-1:0] rd_issue_axi_beat_o,
+  output logic [1:0] rd_issue_frag_idx_o,
   output logic wr_issue_valid_o,
   input logic wr_issue_ready_i,
   output logic [$clog2(ParentEntries)-1:0] wr_issue_parent_idx_o,
   output logic [AxiAddrWidth-1:0] wr_issue_addr_o,
   output logic [AxlenWidth-1:0] wr_issue_axi_beat_o,
+  output logic [1:0] wr_issue_frag_idx_o,
   input logic child_alloc_valid_i,
   output logic child_alloc_ready_o,
   input logic [$clog2(ParentEntries)-1:0] child_alloc_parent_idx_i,
@@ -53,6 +55,10 @@ module axi2chi_nocoh_txn_ctx #(
   input logic [1:0] child_alloc_frag_idx_i,
   output logic [$clog2(ChildEntries)-1:0] child_alloc_idx_o,
   output logic [ChiTxnidWidth-1:0] child_alloc_txnid_o,
+  output logic child_alloc_last_fragment_o,
+  output logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_alloc_axi_byte_offset_o,
+  output logic [$clog2(CacheLineBytes)-1:0] child_alloc_line_byte_offset_o,
+  output logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_alloc_fragment_byte_count_o,
   input logic child_release_valid_i,
   output logic child_release_ready_o,
   input logic [$clog2(ChildEntries)-1:0] child_release_idx_i,
@@ -71,6 +77,9 @@ module axi2chi_nocoh_txn_ctx #(
   output logic [AxiIdWidth-1:0] child_lookup_axi_id_o,
   output logic child_lookup_is_write_o,
   output logic child_lookup_last_o,
+  output logic [AxlenWidth-1:0] child_lookup_axi_beat_o,
+  output logic [1:0] child_lookup_frag_idx_o,
+  output logic child_lookup_last_fragment_o,
   output logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_lookup_axi_byte_offset_o,
   output logic [$clog2(CacheLineBytes)-1:0] child_lookup_line_byte_offset_o,
   output logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_lookup_fragment_byte_count_o,
@@ -104,7 +113,9 @@ module axi2chi_nocoh_txn_ctx #(
     logic [AxsizeWidth-1:0] size;
     logic [1:0] burst;
     logic [BeatIndexWidth-1:0] next_issue_beat;
+    logic [1:0] next_issue_frag;
     logic [BeatIndexWidth-1:0] next_retire_beat;
+    logic [1:0] next_retire_frag;
     logic [BeatCountWidth-1:0] completed_beat_count;
     logic error_seen;
     logic all_children_issued;
@@ -154,14 +165,18 @@ module axi2chi_nocoh_txn_ctx #(
   logic child_event_fire;
   logic child_event_completes;
   logic child_completion_new;
+  logic child_beat_completion_new;
   logic rd_issue_fire;
   logic wr_issue_fire;
   logic [ParentIndexWidth-1:0] child_event_parent_idx;
   logic [BeatCountWidth-1:0] parent_completed_beat_next;
   logic [BeatCountWidth-1:0] parent_expected_beat_count;
   logic [AxiAddrWidth-1:0] child_alloc_beat_bytes;
+  logic [AxiAddrWidth-1:0] child_alloc_beat_addr;
   logic [AxiAddrWidth-1:0] child_alloc_line_remaining;
   logic [AxiAddrWidth-1:0] child_alloc_fragment_bytes;
+  logic rd_issue_crosses_line;
+  logic child_event_crosses_line;
 
   // The frozen profile supports only FIXED and INCR.  Admission owns rejection
   // of unsupported burst encodings; an admitted command is therefore either
@@ -200,7 +215,6 @@ module axi2chi_nocoh_txn_ctx #(
         wr_id_blocked = 1'b1;
       end
     end
-
     rd_admit_ready_o = 1'b0;
     wr_admit_ready_o = 1'b0;
     rd_admit_parent_idx_o = parent_alloc_idx;
@@ -209,34 +223,53 @@ module axi2chi_nocoh_txn_ctx #(
     rd_issue_parent_idx_o = '0;
     rd_issue_addr_o = '0;
     rd_issue_axi_beat_o = '0;
+    rd_issue_frag_idx_o = '0;
     wr_issue_valid_o = 1'b0;
     wr_issue_parent_idx_o = '0;
     wr_issue_addr_o = '0;
     wr_issue_axi_beat_o = '0;
+    wr_issue_frag_idx_o = '0;
     for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
       if (!rd_issue_valid_o && parent_q[idx].valid &&
           !parent_q[idx].is_write &&
           parent_q[idx].next_issue_beat <= parent_q[idx].len &&
-          parent_q[idx].next_issue_beat == parent_q[idx].next_retire_beat) begin
+          parent_q[idx].next_issue_beat == parent_q[idx].next_retire_beat &&
+          parent_q[idx].next_issue_frag == parent_q[idx].next_retire_frag) begin
         rd_issue_valid_o = !rst;
         rd_issue_parent_idx_o = ParentIndexWidth'(idx);
         rd_issue_axi_beat_o = parent_q[idx].next_issue_beat;
+        rd_issue_frag_idx_o = parent_q[idx].next_issue_frag;
         rd_issue_addr_o = axi_beat_addr(parent_q[idx].start_addr,
             parent_q[idx].size, parent_q[idx].burst,
             parent_q[idx].next_issue_beat);
+        if (parent_q[idx].next_issue_frag != 0) begin
+          rd_issue_addr_o = (rd_issue_addr_o &
+              ~AxiAddrWidth'(CacheLineBytes - 1)) +
+              AxiAddrWidth'(CacheLineBytes);
+        end
       end
       if (!wr_issue_valid_o && parent_q[idx].valid &&
           parent_q[idx].is_write &&
           parent_q[idx].next_issue_beat <= parent_q[idx].len &&
-          parent_q[idx].next_issue_beat == parent_q[idx].next_retire_beat) begin
+          parent_q[idx].next_issue_beat == parent_q[idx].next_retire_beat &&
+          parent_q[idx].next_issue_frag == parent_q[idx].next_retire_frag) begin
         wr_issue_valid_o = !rst;
         wr_issue_parent_idx_o = ParentIndexWidth'(idx);
         wr_issue_axi_beat_o = parent_q[idx].next_issue_beat;
+        wr_issue_frag_idx_o = parent_q[idx].next_issue_frag;
         wr_issue_addr_o = axi_beat_addr(parent_q[idx].start_addr,
             parent_q[idx].size, parent_q[idx].burst,
             parent_q[idx].next_issue_beat);
+        if (parent_q[idx].next_issue_frag != 0) begin
+          wr_issue_addr_o = (wr_issue_addr_o &
+              ~AxiAddrWidth'(CacheLineBytes - 1)) +
+              AxiAddrWidth'(CacheLineBytes);
+        end
       end
     end
+    rd_issue_crosses_line = (rd_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) +
+        (AxiAddrWidth'(1) << parent_q[rd_issue_parent_idx_o].size) >
+        AxiAddrWidth'(CacheLineBytes);
     child_alloc_idx = '0;
     child_free_found = 1'b0;
     for (int unsigned idx = 0; idx < ChildEntries; idx++) begin
@@ -302,6 +335,9 @@ module axi2chi_nocoh_txn_ctx #(
     child_lookup_axi_id_o = '0;
     child_lookup_is_write_o = 1'b0;
     child_lookup_last_o = 1'b0;
+    child_lookup_axi_beat_o = '0;
+    child_lookup_frag_idx_o = '0;
+    child_lookup_last_fragment_o = 1'b0;
     child_lookup_axi_byte_offset_o = '0;
     child_lookup_line_byte_offset_o = '0;
     child_lookup_fragment_byte_count_o = '0;
@@ -314,6 +350,13 @@ module axi2chi_nocoh_txn_ctx #(
       child_lookup_is_write_o = child_q[child_lookup_idx_i].is_write;
       child_lookup_last_o = child_q[child_lookup_idx_i].axi_beat_idx ==
           parent_q[child_q[child_lookup_idx_i].parent_idx].len;
+      child_lookup_axi_beat_o = child_q[child_lookup_idx_i].axi_beat_idx;
+      child_lookup_frag_idx_o = child_q[child_lookup_idx_i].frag_idx;
+      child_lookup_last_fragment_o = child_q[child_lookup_idx_i].frag_idx != 0 ||
+          ((child_q[child_lookup_idx_i].addr &
+          AxiAddrWidth'(CacheLineBytes - 1)) +
+          (AxiAddrWidth'(1) << parent_q[child_q[child_lookup_idx_i].parent_idx].size)
+          <= AxiAddrWidth'(CacheLineBytes));
       child_lookup_axi_byte_offset_o =
           child_q[child_lookup_idx_i].axi_byte_offset;
       child_lookup_line_byte_offset_o =
@@ -334,22 +377,42 @@ module axi2chi_nocoh_txn_ctx #(
         !child_q[child_event_idx_i].comp_seen &&
         !child_q[child_event_idx_i].rxdat_seen &&
         !child_q[child_event_idx_i].error_seen;
+    child_beat_completion_new = child_completion_new &&
+        (child_q[child_event_idx_i].frag_idx != 0 ||
+        !child_event_crosses_line);
     parent_completed_beat_next =
         parent_q[child_event_parent_idx].completed_beat_count + BeatCountWidth'(1);
     parent_expected_beat_count =
         BeatCountWidth'(parent_q[child_event_parent_idx].len) + BeatCountWidth'(1);
     child_alloc_beat_bytes = AxiAddrWidth'(1) <<
         parent_q[child_alloc_parent_idx_i].size;
+    child_alloc_beat_addr = axi_beat_addr(
+        parent_q[child_alloc_parent_idx_i].start_addr,
+        parent_q[child_alloc_parent_idx_i].size,
+        parent_q[child_alloc_parent_idx_i].burst,
+        child_alloc_axi_beat_i);
     child_alloc_line_remaining = AxiAddrWidth'(CacheLineBytes) -
-        (child_alloc_addr_i & AxiAddrWidth'(CacheLineBytes - 1));
+        (child_alloc_beat_addr & AxiAddrWidth'(CacheLineBytes - 1));
     if (child_alloc_frag_idx_i == 0) begin
       child_alloc_fragment_bytes = child_alloc_beat_bytes > child_alloc_line_remaining ?
           child_alloc_line_remaining : child_alloc_beat_bytes;
     end else begin
       child_alloc_fragment_bytes = child_alloc_beat_bytes - child_alloc_line_remaining;
     end
+    child_alloc_last_fragment_o = child_alloc_frag_idx_i != 0 ||
+        child_alloc_beat_bytes <= child_alloc_line_remaining;
+    child_alloc_axi_byte_offset_o = child_alloc_frag_idx_i == 0 ? '0 :
+        AxiByteCountWidth'(child_alloc_line_remaining);
+    child_alloc_line_byte_offset_o = child_alloc_frag_idx_i == 0 ?
+        child_alloc_beat_addr[LineOffsetWidth-1:0] : '0;
+    child_alloc_fragment_byte_count_o =
+        AxiByteCountWidth'(child_alloc_fragment_bytes);
+    child_event_crosses_line =
+        (child_q[child_event_idx_i].addr & AxiAddrWidth'(CacheLineBytes - 1)) +
+        (AxiAddrWidth'(1) << parent_q[child_event_parent_idx].size) >
+        AxiAddrWidth'(CacheLineBytes);
     child_event_parent_idx_o = child_event_parent_idx;
-    child_event_parent_complete_o = child_completion_new &&
+    child_event_parent_complete_o = child_beat_completion_new &&
         child_q[child_event_idx_i].is_write &&
         parent_completed_beat_next >= parent_expected_beat_count;
     child_event_parent_error_o = parent_q[child_event_parent_idx].error_seen ||
@@ -382,7 +445,9 @@ module axi2chi_nocoh_txn_ctx #(
         parent_q[parent_alloc_idx].size <= rd_admit_size_i;
         parent_q[parent_alloc_idx].burst <= rd_admit_burst_i;
         parent_q[parent_alloc_idx].next_issue_beat <= '0;
+        parent_q[parent_alloc_idx].next_issue_frag <= '0;
         parent_q[parent_alloc_idx].next_retire_beat <= '0;
+        parent_q[parent_alloc_idx].next_retire_frag <= '0;
         parent_q[parent_alloc_idx].completed_beat_count <= '0;
         parent_q[parent_alloc_idx].error_seen <= 1'b0;
         parent_q[parent_alloc_idx].all_children_issued <= 1'b0;
@@ -398,7 +463,9 @@ module axi2chi_nocoh_txn_ctx #(
         parent_q[parent_alloc_idx].size <= wr_admit_size_i;
         parent_q[parent_alloc_idx].burst <= wr_admit_burst_i;
         parent_q[parent_alloc_idx].next_issue_beat <= '0;
+        parent_q[parent_alloc_idx].next_issue_frag <= '0;
         parent_q[parent_alloc_idx].next_retire_beat <= '0;
+        parent_q[parent_alloc_idx].next_retire_frag <= '0;
         parent_q[parent_alloc_idx].completed_beat_count <= '0;
         parent_q[parent_alloc_idx].error_seen <= 1'b0;
         parent_q[parent_alloc_idx].all_children_issued <= 1'b0;
@@ -438,19 +505,35 @@ module axi2chi_nocoh_txn_ctx #(
       end
 
       if (rd_issue_fire) begin
-        parent_q[rd_issue_parent_idx_o].next_issue_beat <=
-            parent_q[rd_issue_parent_idx_o].next_issue_beat + 1'b1;
+        if (rd_issue_crosses_line && rd_issue_frag_idx_o == 0) begin
+          parent_q[rd_issue_parent_idx_o].next_issue_frag <= 2'd1;
+        end else begin
+          parent_q[rd_issue_parent_idx_o].next_issue_beat <=
+              parent_q[rd_issue_parent_idx_o].next_issue_beat + 1'b1;
+          parent_q[rd_issue_parent_idx_o].next_issue_frag <= '0;
+        end
         parent_q[rd_issue_parent_idx_o].all_children_issued <=
             parent_q[rd_issue_parent_idx_o].next_issue_beat ==
-            parent_q[rd_issue_parent_idx_o].len;
+            parent_q[rd_issue_parent_idx_o].len &&
+            (!rd_issue_crosses_line || rd_issue_frag_idx_o == 2'd1);
       end
 
       if (wr_issue_fire) begin
-        parent_q[wr_issue_parent_idx_o].next_issue_beat <=
-            parent_q[wr_issue_parent_idx_o].next_issue_beat + 1'b1;
+        if ((wr_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) +
+            (AxiAddrWidth'(1) << parent_q[wr_issue_parent_idx_o].size) >
+            AxiAddrWidth'(CacheLineBytes) && wr_issue_frag_idx_o == 0) begin
+          parent_q[wr_issue_parent_idx_o].next_issue_frag <= 2'd1;
+        end else begin
+          parent_q[wr_issue_parent_idx_o].next_issue_beat <=
+              parent_q[wr_issue_parent_idx_o].next_issue_beat + 1'b1;
+          parent_q[wr_issue_parent_idx_o].next_issue_frag <= '0;
+        end
         parent_q[wr_issue_parent_idx_o].all_children_issued <=
             parent_q[wr_issue_parent_idx_o].next_issue_beat ==
-            parent_q[wr_issue_parent_idx_o].len;
+            parent_q[wr_issue_parent_idx_o].len &&
+            (!((wr_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) +
+            (AxiAddrWidth'(1) << parent_q[wr_issue_parent_idx_o].size) >
+            AxiAddrWidth'(CacheLineBytes)) || wr_issue_frag_idx_o != 0);
       end
 
       if (child_release_fire) begin
@@ -489,13 +572,21 @@ module axi2chi_nocoh_txn_ctx #(
           child_q[child_event_idx_i].error_seen <= 1'b1;
         end
 
-        if (child_completion_new) begin
+        if (child_beat_completion_new) begin
           parent_q[child_event_parent_idx].completed_beat_count <=
               parent_completed_beat_next;
           parent_q[child_event_parent_idx].all_children_complete <=
               parent_completed_beat_next >= parent_expected_beat_count;
-          parent_q[child_event_parent_idx].next_retire_beat <=
-              parent_q[child_event_parent_idx].next_retire_beat + 1'b1;
+        end
+
+        if (child_completion_new) begin
+          if (child_event_crosses_line && child_q[child_event_idx_i].frag_idx == 0) begin
+            parent_q[child_event_parent_idx].next_retire_frag <= 2'd1;
+          end else begin
+            parent_q[child_event_parent_idx].next_retire_beat <=
+                parent_q[child_event_parent_idx].next_retire_beat + 1'b1;
+            parent_q[child_event_parent_idx].next_retire_frag <= '0;
+          end
         end
 
         if (child_event_type_i == kChildEventError || child_event_resp_i[1]) begin

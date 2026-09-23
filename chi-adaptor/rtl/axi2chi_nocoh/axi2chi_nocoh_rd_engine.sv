@@ -19,11 +19,13 @@ module axi2chi_nocoh_rd_engine #(
   input logic [$clog2(ParentEntries)-1:0] rd_issue_parent_idx_i,
   input logic [AxiAddrWidth-1:0] rd_issue_addr_i,
   input logic [7:0] rd_issue_axi_beat_i,
+  input logic [1:0] rd_issue_frag_idx_i,
   output logic child_alloc_valid_o,
   input logic child_alloc_ready_i,
   output logic [$clog2(ParentEntries)-1:0] child_alloc_parent_idx_o,
   output logic [AxiAddrWidth-1:0] child_alloc_addr_o,
   output logic [7:0] child_alloc_axi_beat_o,
+  output logic [1:0] child_alloc_frag_idx_o,
   input logic [$clog2(ChildEntries)-1:0] child_alloc_idx_i,
   input logic [ChiTxnidWidth-1:0] child_alloc_txnid_i,
   output logic child_event_valid_o,
@@ -61,6 +63,7 @@ module axi2chi_nocoh_rd_engine #(
   logic [ChiTxnidWidth-1:0] txnid_q [ChildEntries];
   logic [AxiAddrWidth-1:0] addr_q [ChildEntries];
   logic [7:0] axi_beat_q [ChildEntries];
+  logic [1:0] frag_idx_q [ChildEntries];
   logic [DatFlitWidth-1:0] rxdat_payload_q [ChildEntries];
   logic [$clog2(ChildEntries)-1:0] issue_lane_idx;
   logic issue_lane_found;
@@ -128,6 +131,7 @@ module axi2chi_nocoh_rd_engine #(
     child_alloc_parent_idx_o = parent_q[alloc_lane_idx];
     child_alloc_addr_o = addr_q[alloc_lane_idx];
     child_alloc_axi_beat_o = axi_beat_q[alloc_lane_idx];
+    child_alloc_frag_idx_o = frag_idx_q[alloc_lane_idx];
     child_event_valid_o = 1'b0;
     child_event_idx_o = child_q[event_lane_idx];
     child_event_type_o = 3'd0;
@@ -170,6 +174,7 @@ module axi2chi_nocoh_rd_engine #(
         txnid_q[idx] <= '0;
         addr_q[idx] <= '0;
         axi_beat_q[idx] <= '0;
+        frag_idx_q[idx] <= '0;
         rxdat_payload_q[idx] <= '0;
       end
     end else begin
@@ -177,6 +182,7 @@ module axi2chi_nocoh_rd_engine #(
         parent_q[issue_lane_idx] <= rd_issue_parent_idx_i;
         addr_q[issue_lane_idx] <= rd_issue_addr_i;
         axi_beat_q[issue_lane_idx] <= rd_issue_axi_beat_i;
+        frag_idx_q[issue_lane_idx] <= rd_issue_frag_idx_i;
         state_q[issue_lane_idx] <= kRdAlloc;
       end
 

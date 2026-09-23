@@ -395,7 +395,199 @@ module tb_axi2chi_nocoh_top_write;
     @(posedge clk);
     @(negedge clk);
 
-    $display("PASS: top-level AXI write, including four-beat INCR burst");
+    // One 8-byte AXI beat at byte 60 of a cache line is split into two CHI
+    // children.  Its W payload is accepted once, reused for fragment 1, and
+    // AXI B is held off until both CHI Comp responses arrive.
+    s_axi_awid = 2'd0;
+    s_axi_awaddr = 32'h0000_303c;
+    s_axi_awlen = '0;
+    s_axi_awsize = 3'd3;
+    s_axi_awburst = 2'b01;
+    s_axi_wdata = 64'h8877_6655_4433_2211;
+    s_axi_wstrb = 8'hff;
+    s_axi_wlast = 1'b1;
+    s_axi_bready = 1'b0;
+    s_axi_awvalid = 1'b1;
+    #1;
+    `CHECK(s_axi_awready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_awvalid = 1'b0;
+
+    for (int unsigned frag = 0; frag < 2; frag++) begin
+      repeat (8) begin
+        if (!chi_txreq_flitv_o) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(chi_txreq_flitv_o);
+      `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] ==
+          (frag == 0 ? 32'h0000_303c : 32'h0000_3040));
+      chi_txreq_lcrdv_i = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      chi_txreq_lcrdv_i = 1'b0;
+
+      chi_rxrsp_flit_i = '0;
+      chi_rxrsp_flit_i[3:0] = 4'h1;
+      chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'ha0 + frag;
+      chi_rxrsp_flit_i[36 +: 2] = 2'b00;
+      chi_rxrsp_flitv_i = 1'b1;
+      #1;
+      `CHECK(chi_rxrsp_lcrdv_o);
+      @(posedge clk);
+      @(negedge clk);
+      chi_rxrsp_flitv_i = 1'b0;
+
+      if (frag == 0) begin
+        s_axi_wvalid = 1'b1;
+        repeat (4) begin
+          if (!s_axi_wready) begin
+            @(posedge clk);
+            @(negedge clk);
+          end
+        end
+        #1;
+        `CHECK(s_axi_wready);
+        @(posedge clk);
+        @(negedge clk);
+        s_axi_wvalid = 1'b0;
+      end
+
+      repeat (4) begin
+        if (!chi_txdat_flitv_o) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(chi_txdat_flitv_o);
+      `CHECK(chi_txdat_flit_o[24 +: ChiDbidWidth] == 8'ha0 + frag);
+      `CHECK(chi_txdat_flit_o[128 +: ChiDataWidth] ==
+          (frag == 0 ? 64'h0000_0000_4433_2211 : 64'h0000_0000_8877_6655));
+      `CHECK(chi_txdat_flit_o[64 +: (ChiDataWidth / 8)] ==
+          (frag == 0 ? 8'h0f : 8'h0f));
+      chi_txdat_lcrdv_i = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      chi_txdat_lcrdv_i = 1'b0;
+
+      chi_rxrsp_flit_i = '0;
+      chi_rxrsp_flit_i[3:0] = 4'h3;
+      chi_rxrsp_flit_i[36 +: 2] = 2'b00;
+      chi_rxrsp_flitv_i = 1'b1;
+      #1;
+      `CHECK(chi_rxrsp_lcrdv_o);
+      @(posedge clk);
+      @(negedge clk);
+      chi_rxrsp_flitv_i = 1'b0;
+      if (frag == 0) begin
+        #1;
+        `CHECK(!s_axi_bvalid);
+      end
+    end
+
+    repeat (4) begin
+      if (!s_axi_bvalid) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(s_axi_bvalid && s_axi_bid == 2'd0 && s_axi_bresp == 2'b00);
+    s_axi_bready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+
+    // A narrow, unaligned write must preserve the byte strobes in its packed
+    // child fragment rather than widening the transfer to the AXI bus width.
+    s_axi_awid = 2'd1;
+    s_axi_awaddr = 32'h0000_305d;
+    s_axi_awlen = '0;
+    s_axi_awsize = 3'd2;
+    s_axi_awburst = 2'b01;
+    s_axi_wdata = 64'h8877_6655_4433_2211;
+    s_axi_wstrb = 8'h0d;
+    s_axi_wlast = 1'b1;
+    s_axi_bready = 1'b0;
+    s_axi_awvalid = 1'b1;
+    #1;
+    `CHECK(s_axi_awready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_awvalid = 1'b0;
+    repeat (4) begin
+      if (!chi_txreq_flitv_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(chi_txreq_flitv_o);
+    `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] == 32'h0000_305d);
+    chi_txreq_lcrdv_i = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    chi_txreq_lcrdv_i = 1'b0;
+    chi_rxrsp_flit_i = '0;
+    chi_rxrsp_flit_i[3:0] = 4'h1;
+    chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'hb1;
+    chi_rxrsp_flitv_i = 1'b1;
+    #1;
+    `CHECK(chi_rxrsp_lcrdv_o);
+    @(posedge clk);
+    @(negedge clk);
+    chi_rxrsp_flitv_i = 1'b0;
+    s_axi_wvalid = 1'b1;
+    repeat (4) begin
+      if (!s_axi_wready) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(s_axi_wready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_wvalid = 1'b0;
+    repeat (4) begin
+      if (!chi_txdat_flitv_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(chi_txdat_flitv_o);
+    `CHECK(chi_txdat_flit_o[24 +: ChiDbidWidth] == 8'hb1);
+    `CHECK(chi_txdat_flit_o[128 +: ChiDataWidth] == 64'h0000_0000_4433_2211);
+    `CHECK(chi_txdat_flit_o[64 +: (ChiDataWidth / 8)] == 8'h0d);
+    chi_txdat_lcrdv_i = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    chi_txdat_lcrdv_i = 1'b0;
+    chi_rxrsp_flit_i = '0;
+    chi_rxrsp_flit_i[3:0] = 4'h3;
+    chi_rxrsp_flitv_i = 1'b1;
+    #1;
+    `CHECK(chi_rxrsp_lcrdv_o);
+    @(posedge clk);
+    @(negedge clk);
+    chi_rxrsp_flitv_i = 1'b0;
+    repeat (4) begin
+      if (!s_axi_bvalid) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(s_axi_bvalid && s_axi_bid == 2'd1 && s_axi_bresp == 2'b00);
+    s_axi_bready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+
+    $display("PASS: top-level AXI write, including burst and cross-line fragments");
     $finish;
   end
 endmodule

@@ -283,7 +283,113 @@ module tb_axi2chi_nocoh_top_read;
       s_axi_rready = 1'b0;
     end
 
-    $display("PASS: top-level AXI read including FIXED burst addressing");
+    s_axi_arid = 2'd2;
+    s_axi_araddr = 32'h0000_103c;
+    s_axi_arlen = 8'd0;
+    s_axi_arsize = 3'd3;
+    s_axi_arburst = 2'b01;
+    s_axi_arvalid = 1'b1;
+    #1;
+    `CHECK(s_axi_arready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_arvalid = 1'b0;
+
+    for (int unsigned frag = 0; frag < 2; frag++) begin
+      repeat (8) begin
+        if (!chi_txreq_flitv_o) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(chi_txreq_flitv_o);
+      `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] ==
+          (frag == 0 ? 32'h0000_103c : 32'h0000_1040));
+      chi_txreq_lcrdv_i = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      chi_txreq_lcrdv_i = 1'b0;
+      chi_rxdat_flit_i = '0;
+      chi_rxdat_flit_i[26 +: 2] = 2'b00;
+      chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
+      chi_rxdat_flit_i[64 +: ChiDataWidth] =
+          frag == 0 ? 64'h0000_0000_ddcc_bbaa : 64'h0000_0000_0000_ffee;
+      chi_rxdat_flitv_i = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      chi_rxdat_flitv_i = 1'b0;
+      if (frag == 0) begin
+        #1;
+        `CHECK(!s_axi_rvalid);
+      end
+    end
+    repeat (4) begin
+      if (!s_axi_rvalid) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(s_axi_rvalid && s_axi_rid == 2'd2);
+    `CHECK(s_axi_rdata == 64'h0000_ffee_ddcc_bbaa);
+    `CHECK(s_axi_rlast);
+    s_axi_rready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+
+    // A narrow, unaligned transfer uses one child and fills only the
+    // normalized AXI byte lanes covered by the requested transfer size.
+    s_axi_arid = 2'd1;
+    s_axi_araddr = 32'h0000_1113;
+    s_axi_arlen = '0;
+    s_axi_arsize = 3'd2;
+    s_axi_arburst = 2'b01;
+    s_axi_arvalid = 1'b1;
+    s_axi_rready = 1'b0;
+    #1;
+    `CHECK(s_axi_arready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_arvalid = 1'b0;
+    repeat (4) begin
+      if (!chi_txreq_flitv_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(chi_txreq_flitv_o);
+    `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] == 32'h0000_1113);
+    chi_txreq_lcrdv_i = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    chi_txreq_lcrdv_i = 1'b0;
+    chi_rxdat_flit_i = '0;
+    chi_rxdat_flit_i[26 +: 2] = 2'b00;
+    chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'h0f;
+    chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'h0000_0000_ddcc_bbaa;
+    chi_rxdat_flitv_i = 1'b1;
+    #1;
+    `CHECK(chi_rxdat_lcrdv_o);
+    @(posedge clk);
+    @(negedge clk);
+    chi_rxdat_flitv_i = 1'b0;
+    repeat (4) begin
+      if (!s_axi_rvalid) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(s_axi_rvalid && s_axi_rid == 2'd1);
+    `CHECK(s_axi_rdata == 64'h0000_0000_ddcc_bbaa);
+    `CHECK(s_axi_rlast && s_axi_rresp == 2'b00);
+    s_axi_rready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+
+    $display("PASS: top-level AXI read including FIXED and cross-line fragments");
     $finish;
   end
 endmodule

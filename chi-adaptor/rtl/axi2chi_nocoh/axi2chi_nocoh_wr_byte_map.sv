@@ -25,10 +25,10 @@ module axi2chi_nocoh_wr_byte_map #(
     for (int unsigned byte_idx = 0; byte_idx < AxiBytes; byte_idx++) begin
       if (byte_idx >= axi_byte_offset_i &&
           byte_idx < axi_byte_offset_i + fragment_byte_count_i &&
-          line_byte_offset_i + byte_idx - axi_byte_offset_i < ChiBytes) begin
-        chi_data_o[(line_byte_offset_i + byte_idx - axi_byte_offset_i) * 8 +: 8] =
+          byte_idx - axi_byte_offset_i < ChiBytes) begin
+        chi_data_o[(byte_idx - axi_byte_offset_i) * 8 +: 8] =
             axi_data_i[byte_idx * 8 +: 8];
-        chi_be_o[line_byte_offset_i + byte_idx - axi_byte_offset_i] =
+        chi_be_o[byte_idx - axi_byte_offset_i] =
             axi_strb_i[byte_idx];
       end
     end

@@ -25,6 +25,8 @@ module tb_axi2chi_nocoh_rd_data;
   logic [ChiDataWidth / 8-1:0] fragment_be_i;
   logic [1:0] fragment_resp_i;
   logic fragment_last_i;
+  logic fragment_last_fragment_i;
+  logic [1:0] fragment_idx_i;
   logic [$clog2(AxiDataWidth / 8 + 1)-1:0] fragment_axi_byte_offset_i;
   logic [$clog2(64)-1:0] fragment_line_byte_offset_i;
   logic [$clog2(AxiDataWidth / 8 + 1)-1:0] fragment_byte_count_i;
@@ -57,6 +59,8 @@ module tb_axi2chi_nocoh_rd_data;
     fragment_be_i = '0;
     fragment_resp_i = '0;
     fragment_last_i = 1'b1;
+    fragment_last_fragment_i = 1'b1;
+    fragment_idx_i = '0;
     fragment_axi_byte_offset_i = '0;
     fragment_line_byte_offset_i = '0;
     fragment_byte_count_i = AxiDataWidth / 8;
@@ -68,6 +72,13 @@ module tb_axi2chi_nocoh_rd_data;
     `CHECK(fragment_ready_o);
     `CHECK(!rd_rsp_valid_o);
 
+    repeat (8) begin
+      if (!fragment_ready_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    `CHECK(fragment_ready_o);
     fragment_valid_i = 1'b1;
     fragment_child_idx_i = 3'd5;
     fragment_parent_idx_i = 3'd4;
@@ -79,6 +90,12 @@ module tb_axi2chi_nocoh_rd_data;
 
     @(negedge clk);
     fragment_valid_i = 1'b0;
+    repeat (4) begin
+      if (!rd_rsp_valid_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
     #1;
     `CHECK(rd_rsp_valid_o);
     `CHECK(!fragment_ready_o);
@@ -98,6 +115,57 @@ module tb_axi2chi_nocoh_rd_data;
     `CHECK(fragment_ready_o);
 
     fragment_valid_i = 1'b1;
+    fragment_child_idx_i = 3'd0;
+    fragment_parent_idx_i = 3'd2;
+    fragment_axi_id_i = 3'd1;
+    fragment_data_i = 128'h0000_0000_0000_0000_0000_0000_bbaa_9988;
+    fragment_be_i = 16'h000f;
+    fragment_resp_i = 2'b00;
+    fragment_last_i = 1'b1;
+    fragment_axi_byte_offset_i = '0;
+    fragment_line_byte_offset_i = '0;
+    fragment_byte_count_i = 4'd4;
+    fragment_last_fragment_i = 1'b0;
+    fragment_idx_i = '0;
+    @(posedge clk);
+    @(negedge clk);
+    fragment_valid_i = 1'b0;
+    #1;
+    `CHECK(!rd_rsp_valid_o);
+
+    while (!fragment_ready_o) begin
+      @(posedge clk);
+      @(negedge clk);
+    end
+
+    fragment_valid_i = 1'b1;
+    fragment_child_idx_i = 3'd1;
+    fragment_data_i = 128'h0000_0000_0000_0000_0000_0000_ffee_ddcc;
+    fragment_be_i = 16'h000f;
+    fragment_axi_byte_offset_i = 4'd4;
+    fragment_line_byte_offset_i = '0;
+    fragment_byte_count_i = 4'd4;
+    fragment_last_fragment_i = 1'b1;
+    fragment_idx_i = 2'd1;
+    @(posedge clk);
+    @(negedge clk);
+    fragment_valid_i = 1'b0;
+    repeat (8) begin
+      if (!rd_rsp_valid_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(rd_rsp_valid_o && rd_rsp_parent_idx_o == 3'd2);
+    `CHECK(rd_rsp_id_o == 3'd1);
+    `CHECK(rd_rsp_data_o == 64'hffee_ddcc_bbaa_9988);
+    rd_rsp_ready_i = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    rd_rsp_ready_i = 1'b0;
+
+    fragment_valid_i = 1'b1;
     fragment_child_idx_i = 3'd2;
     fragment_parent_idx_i = 3'd1;
     fragment_axi_id_i = 3'd3;
@@ -107,6 +175,8 @@ module tb_axi2chi_nocoh_rd_data;
     fragment_line_byte_offset_i = '0;
     fragment_byte_count_i = 4'd4;
     fragment_resp_i = 2'b10;
+    fragment_last_fragment_i = 1'b1;
+    fragment_idx_i = '0;
     @(posedge clk);
     @(negedge clk);
     fragment_valid_i = 1'b0;
