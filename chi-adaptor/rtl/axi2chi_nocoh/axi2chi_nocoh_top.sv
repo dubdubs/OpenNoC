@@ -330,13 +330,15 @@ module axi2chi_nocoh_top #(
 
   axi2chi_nocoh_txn_ctx #(
     .AxiAddrWidth(AxiAddrWidth),
+    .AxiDataWidth(AxiDataWidth),
     .AxiIdWidth(AxiIdWidth),
     .AxlenWidth(AxlenWidth),
     .AxsizeWidth(AxsizeWidth),
     .ChiTxnidWidth(ChiTxnidWidth),
     .ChiDbidWidth(ChiDbidWidth),
     .ParentEntries(ParentEntries),
-    .ChildEntries(ChildEntries)
+    .ChildEntries(ChildEntries),
+    .CacheLineBytes(CacheLineBytes)
   ) txn_ctx (
     .clk(clk),
     .rst(rst),

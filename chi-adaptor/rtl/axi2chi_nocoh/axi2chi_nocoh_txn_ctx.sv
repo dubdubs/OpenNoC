@@ -4,6 +4,7 @@
 
 module axi2chi_nocoh_txn_ctx #(
   parameter int unsigned AxiAddrWidth = 64,
+  parameter int unsigned AxiDataWidth = 128,
   parameter int unsigned AxiIdWidth = 4,
   parameter int unsigned AxlenWidth = 8,
   parameter int unsigned AxsizeWidth = 3,
@@ -12,7 +13,8 @@ module axi2chi_nocoh_txn_ctx #(
   parameter int unsigned ParentEntries = 16,
   parameter int unsigned ChildEntries = 16,
   parameter int unsigned TxnidEntries = ChildEntries,
-  parameter int unsigned MaxAxiBeats = 256
+  parameter int unsigned MaxAxiBeats = 256,
+  parameter int unsigned CacheLineBytes = 64
 ) (
   input logic clk,
   input logic rst,
@@ -78,6 +80,8 @@ module axi2chi_nocoh_txn_ctx #(
   localparam int unsigned ChildIndexWidth = $clog2(ChildEntries);
   localparam int unsigned BeatIndexWidth = $clog2(MaxAxiBeats);
   localparam int unsigned BeatCountWidth = $clog2(MaxAxiBeats + 1);
+  localparam int unsigned AxiByteCountWidth = $clog2(AxiDataWidth / 8 + 1);
+  localparam int unsigned LineOffsetWidth = $clog2(CacheLineBytes);
 
   typedef enum logic [2:0] {
     kChildEventReqSent,
@@ -111,6 +115,9 @@ module axi2chi_nocoh_txn_ctx #(
     logic [BeatIndexWidth-1:0] axi_beat_idx;
     logic [1:0] frag_idx;
     logic [AxiAddrWidth-1:0] addr;
+    logic [AxiByteCountWidth-1:0] axi_byte_offset;
+    logic [LineOffsetWidth-1:0] line_byte_offset;
+    logic [AxiByteCountWidth-1:0] fragment_byte_count;
     logic [ChiTxnidWidth-1:0] txnid;
     logic [ChiDbidWidth-1:0] dbid;
     logic dbid_valid;
@@ -149,6 +156,9 @@ module axi2chi_nocoh_txn_ctx #(
   logic [ParentIndexWidth-1:0] child_event_parent_idx;
   logic [BeatCountWidth-1:0] parent_completed_beat_next;
   logic [BeatCountWidth-1:0] parent_expected_beat_count;
+  logic [AxiAddrWidth-1:0] child_alloc_beat_bytes;
+  logic [AxiAddrWidth-1:0] child_alloc_line_remaining;
+  logic [AxiAddrWidth-1:0] child_alloc_fragment_bytes;
 
   // The frozen profile supports only FIXED and INCR.  Admission owns rejection
   // of unsupported burst encodings; an admitted command is therefore either
@@ -316,6 +326,16 @@ module axi2chi_nocoh_txn_ctx #(
         parent_q[child_event_parent_idx].completed_beat_count + BeatCountWidth'(1);
     parent_expected_beat_count =
         BeatCountWidth'(parent_q[child_event_parent_idx].len) + BeatCountWidth'(1);
+    child_alloc_beat_bytes = AxiAddrWidth'(1) <<
+        parent_q[child_alloc_parent_idx_i].size;
+    child_alloc_line_remaining = AxiAddrWidth'(CacheLineBytes) -
+        (child_alloc_addr_i & AxiAddrWidth'(CacheLineBytes - 1));
+    if (child_alloc_frag_idx_i == 0) begin
+      child_alloc_fragment_bytes = child_alloc_beat_bytes > child_alloc_line_remaining ?
+          child_alloc_line_remaining : child_alloc_beat_bytes;
+    end else begin
+      child_alloc_fragment_bytes = child_alloc_beat_bytes - child_alloc_line_remaining;
+    end
     child_event_parent_idx_o = child_event_parent_idx;
     child_event_parent_complete_o = child_completion_new &&
         child_q[child_event_idx_i].is_write &&
@@ -389,6 +409,12 @@ module axi2chi_nocoh_txn_ctx #(
         child_q[child_alloc_idx].axi_beat_idx <= child_alloc_axi_beat_i;
         child_q[child_alloc_idx].frag_idx <= child_alloc_frag_idx_i;
         child_q[child_alloc_idx].addr <= child_alloc_addr_i;
+        child_q[child_alloc_idx].axi_byte_offset <= child_alloc_frag_idx_i == 0 ?
+            '0 : AxiByteCountWidth'(child_alloc_line_remaining);
+        child_q[child_alloc_idx].line_byte_offset <= child_alloc_frag_idx_i == 0 ?
+            child_alloc_addr_i[LineOffsetWidth-1:0] : '0;
+        child_q[child_alloc_idx].fragment_byte_count <=
+            AxiByteCountWidth'(child_alloc_fragment_bytes);
         child_q[child_alloc_idx].txnid <= txnid_alloc_id;
         child_q[child_alloc_idx].dbid <= '0;
         child_q[child_alloc_idx].dbid_valid <= 1'b0;
