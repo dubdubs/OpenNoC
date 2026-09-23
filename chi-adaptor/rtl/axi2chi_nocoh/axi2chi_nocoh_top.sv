@@ -193,6 +193,9 @@ module axi2chi_nocoh_top #(
   logic [AxiIdWidth-1:0] child_lookup_axi_id;
   logic child_lookup_is_write;
   logic child_lookup_last;
+  logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_lookup_axi_byte_offset;
+  logic [$clog2(CacheLineBytes)-1:0] child_lookup_line_byte_offset;
+  logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_lookup_fragment_byte_count;
   logic parent_retire_valid;
   logic [ParentIndexWidth-1:0] parent_retire_idx;
   logic wr_rsp_valid;
@@ -396,6 +399,9 @@ module axi2chi_nocoh_top #(
     .child_lookup_axi_id_o(child_lookup_axi_id),
     .child_lookup_is_write_o(child_lookup_is_write),
     .child_lookup_last_o(child_lookup_last),
+    .child_lookup_axi_byte_offset_o(child_lookup_axi_byte_offset),
+    .child_lookup_line_byte_offset_o(child_lookup_line_byte_offset),
+    .child_lookup_fragment_byte_count_o(child_lookup_fragment_byte_count),
     .parent_retire_valid_i(parent_retire_valid),
     .parent_retire_idx_i(parent_retire_idx),
     .parent_retire_ready_o(unused_parent_retire_ready)

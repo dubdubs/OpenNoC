@@ -71,6 +71,9 @@ module axi2chi_nocoh_txn_ctx #(
   output logic [AxiIdWidth-1:0] child_lookup_axi_id_o,
   output logic child_lookup_is_write_o,
   output logic child_lookup_last_o,
+  output logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_lookup_axi_byte_offset_o,
+  output logic [$clog2(CacheLineBytes)-1:0] child_lookup_line_byte_offset_o,
+  output logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_lookup_fragment_byte_count_o,
   input logic parent_retire_valid_i,
   input logic [$clog2(ParentEntries)-1:0] parent_retire_idx_i,
   output logic parent_retire_ready_o
@@ -299,6 +302,9 @@ module axi2chi_nocoh_txn_ctx #(
     child_lookup_axi_id_o = '0;
     child_lookup_is_write_o = 1'b0;
     child_lookup_last_o = 1'b0;
+    child_lookup_axi_byte_offset_o = '0;
+    child_lookup_line_byte_offset_o = '0;
+    child_lookup_fragment_byte_count_o = '0;
     if (!rst && child_lookup_valid_i && child_q[child_lookup_idx_i].valid &&
         parent_q[child_q[child_lookup_idx_i].parent_idx].valid) begin
       child_lookup_valid_o = 1'b1;
@@ -308,6 +314,12 @@ module axi2chi_nocoh_txn_ctx #(
       child_lookup_is_write_o = child_q[child_lookup_idx_i].is_write;
       child_lookup_last_o = child_q[child_lookup_idx_i].axi_beat_idx ==
           parent_q[child_q[child_lookup_idx_i].parent_idx].len;
+      child_lookup_axi_byte_offset_o =
+          child_q[child_lookup_idx_i].axi_byte_offset;
+      child_lookup_line_byte_offset_o =
+          child_q[child_lookup_idx_i].line_byte_offset;
+      child_lookup_fragment_byte_count_o =
+          child_q[child_lookup_idx_i].fragment_byte_count;
     end
     child_event_parent_idx = child_q[child_event_idx_i].parent_idx;
     child_event_completes = 1'b0;
