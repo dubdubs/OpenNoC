@@ -149,6 +149,8 @@ module axi2chi_nocoh_top #(
   logic rd_rsp_ready;
   logic rd_rsp_parent_valid;
   logic [ParentIndexWidth-1:0] rd_rsp_parent_idx;
+  logic [ChildIndexWidth-1:0] rd_rsp_child_idx;
+  logic [AxlenWidth-1:0] rd_rsp_axi_beat;
   logic [AxiIdWidth-1:0] rd_rsp_id;
   logic [AxiDataWidth-1:0] rd_rsp_data;
   logic [1:0] rd_rsp_resp;
@@ -172,6 +174,7 @@ module axi2chi_nocoh_top #(
   logic [1:0] wr_child_event_resp;
   logic wr_data_fragment_valid;
   logic wr_data_fragment_ready;
+  logic wr_data_child_bind_ready;
   logic wr_beat_ready;
   logic [ChildIndexWidth-1:0] wr_data_fragment_child_idx;
   logic [ChiDataWidth-1:0] wr_data_fragment_data;
@@ -213,15 +216,22 @@ module axi2chi_nocoh_top #(
   logic wr_rsp_ready;
   logic [AxiIdWidth-1:0] wr_rsp_id;
   logic [1:0] wr_rsp_resp;
-  logic wr_rsp_hold_valid_q;
-  logic wr_outstanding_q;
-  logic wr_admit_fire;
-  logic [AxiIdWidth-1:0] wr_active_axi_id_q;
-  logic [ParentIndexWidth-1:0] wr_active_parent_idx_q;
-  logic [1:0] wr_rsp_resp_q;
+  logic [ParentEntries-1:0] wr_rsp_valid_q;
+  logic [1:0] wr_rsp_resp_q [ParentEntries];
+  logic wr_rsp_selected_found;
+  logic [ParentIndexWidth-1:0] wr_rsp_selected_idx;
   logic unused_wr_rsp_ready;
   logic unused_child_release_ready;
   logic unused_parent_retire_ready;
+  logic rd_rsp_retire_permit;
+  logic [ParentEntries-1:0] parent_retire_permit_vec;
+  logic axi_beat_retire_valid;
+  logic [ParentIndexWidth-1:0] axi_beat_retire_parent_idx;
+  logic [AxlenWidth-1:0] axi_beat_retire_beat;
+  logic axi_beat_retire_all;
+  logic parent_lookup_valid;
+  logic [ParentIndexWidth-1:0] parent_lookup_idx;
+  logic [AxiIdWidth-1:0] parent_lookup_axi_id;
 
   assign rst = !aresetn;
 
@@ -232,11 +242,22 @@ module axi2chi_nocoh_top #(
   assign rd_core_txreq_ready = core_txreq_ready && rd_core_txreq_valid;
   assign wr_core_txreq_ready =
       core_txreq_ready && !rd_core_txreq_valid && wr_core_txreq_valid;
-  assign wr_rsp_valid = wr_rsp_hold_valid_q;
-  assign wr_rsp_id = wr_active_axi_id_q;
-  assign wr_rsp_resp = wr_rsp_resp_q;
-  assign wr_admit_fire = slave_wr_admit_valid && ctx_wr_admit_ready &&
-      !wr_outstanding_q;
+  always_comb begin
+    wr_rsp_selected_found = 1'b0;
+    wr_rsp_selected_idx = '0;
+    for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
+      if (wr_rsp_valid_q[idx] && parent_retire_permit_vec[idx] &&
+          !wr_rsp_selected_found) begin
+        wr_rsp_selected_found = 1'b1;
+        wr_rsp_selected_idx = ParentIndexWidth'(idx);
+      end
+    end
+  end
+  assign wr_rsp_valid = wr_rsp_selected_found;
+  assign parent_lookup_valid = wr_rsp_selected_found;
+  assign parent_lookup_idx = wr_rsp_selected_idx;
+  assign wr_rsp_id = parent_lookup_axi_id;
+  assign wr_rsp_resp = wr_rsp_resp_q[wr_rsp_selected_idx];
   // Preserve an RXRSP flit at the CHI boundary until the engine that owns its
   // TxnID and expected response opcode can accept it.
   assign core_rxrsp_ready = rd_core_rxrsp_ready || wr_core_rxrsp_ready;
@@ -251,7 +272,8 @@ module axi2chi_nocoh_top #(
       rd_child_alloc_valid ? rd_child_alloc_addr : wr_child_alloc_addr;
   assign rd_child_alloc_ready = child_alloc_ready && rd_child_alloc_valid;
   assign wr_child_alloc_ready =
-      child_alloc_ready && !rd_child_alloc_valid && wr_child_alloc_valid;
+      child_alloc_ready && wr_data_child_bind_ready && !rd_child_alloc_valid &&
+      wr_child_alloc_valid;
   assign rd_child_alloc_idx = child_alloc_idx;
   assign wr_child_alloc_idx = child_alloc_idx;
   assign rd_child_alloc_txnid = child_alloc_txnid;
@@ -268,7 +290,17 @@ module axi2chi_nocoh_top #(
       (wr_rsp_valid && wr_rsp_ready);
   assign parent_retire_idx =
       (rd_rsp_valid && rd_rsp_ready && rd_rsp_parent_valid) ?
-      rd_rsp_parent_idx : wr_active_parent_idx_q;
+      rd_rsp_parent_idx : wr_rsp_selected_idx;
+  assign axi_beat_retire_valid =
+      (rd_rsp_valid && rd_rsp_ready && rd_rsp_parent_valid) ||
+      (wr_rsp_valid && wr_rsp_ready);
+  assign axi_beat_retire_parent_idx =
+      (rd_rsp_valid && rd_rsp_ready && rd_rsp_parent_valid) ?
+      rd_rsp_parent_idx : wr_rsp_selected_idx;
+  assign axi_beat_retire_beat =
+      (rd_rsp_valid && rd_rsp_ready && rd_rsp_parent_valid) ?
+      rd_rsp_axi_beat : '0;
+  assign axi_beat_retire_all = wr_rsp_valid && wr_rsp_ready;
 
   axi2chi_nocoh_slave #(
     .AxiAddrWidth(AxiAddrWidth),
@@ -317,7 +349,7 @@ module axi2chi_nocoh_top #(
     .rd_admit_size_o(slave_rd_admit_size),
     .rd_admit_burst_o(slave_rd_admit_burst),
     .wr_admit_valid_o(slave_wr_admit_valid),
-    .wr_admit_ready_i(ctx_wr_admit_ready && !wr_outstanding_q),
+    .wr_admit_ready_i(ctx_wr_admit_ready),
     .wr_admit_parent_idx_i(ctx_wr_admit_parent_idx),
     .wr_admit_id_o(slave_wr_admit_id),
     .wr_admit_addr_o(slave_wr_admit_addr),
@@ -363,7 +395,7 @@ module axi2chi_nocoh_top #(
     .rd_admit_len_i(slave_rd_admit_len),
     .rd_admit_size_i(slave_rd_admit_size),
     .rd_admit_burst_i(slave_rd_admit_burst),
-    .wr_admit_valid_i(slave_wr_admit_valid && !wr_outstanding_q),
+    .wr_admit_valid_i(slave_wr_admit_valid),
     .wr_admit_ready_o(ctx_wr_admit_ready),
     .wr_admit_id_i(slave_wr_admit_id),
     .wr_admit_addr_i(slave_wr_admit_addr),
@@ -399,9 +431,13 @@ module axi2chi_nocoh_top #(
     .child_alloc_axi_byte_offset_o(child_alloc_axi_byte_offset),
     .child_alloc_line_byte_offset_o(child_alloc_line_byte_offset),
     .child_alloc_fragment_byte_count_o(child_alloc_fragment_byte_count),
-    .child_release_valid_i(child_event_valid),
+    .child_release_valid_i(1'b0),
     .child_release_ready_o(unused_child_release_ready),
-    .child_release_idx_i(child_event_idx),
+    .child_release_idx_i('0),
+    .axi_beat_retire_valid_i(axi_beat_retire_valid),
+    .axi_beat_retire_parent_idx_i(axi_beat_retire_parent_idx),
+    .axi_beat_retire_beat_i(axi_beat_retire_beat),
+    .axi_beat_retire_all_i(axi_beat_retire_all),
     .child_event_valid_i(child_event_valid),
     .child_event_idx_i(child_event_idx),
     .child_event_type_i(child_event_type),
@@ -425,7 +461,14 @@ module axi2chi_nocoh_top #(
     .child_lookup_fragment_byte_count_o(child_lookup_fragment_byte_count),
     .parent_retire_valid_i(parent_retire_valid),
     .parent_retire_idx_i(parent_retire_idx),
-    .parent_retire_ready_o(unused_parent_retire_ready)
+    .parent_retire_ready_o(unused_parent_retire_ready),
+    .parent_retire_query_valid_i(rd_rsp_parent_valid),
+    .parent_retire_query_idx_i(rd_rsp_parent_idx),
+    .parent_retire_query_permit_o(rd_rsp_retire_permit),
+    .parent_retire_permit_vec_o(parent_retire_permit_vec),
+    .parent_lookup_valid_i(parent_lookup_valid),
+    .parent_lookup_idx_i(parent_lookup_idx),
+    .parent_lookup_axi_id_o(parent_lookup_axi_id)
   );
 
   axi2chi_nocoh_rd_engine #(
@@ -475,6 +518,7 @@ module axi2chi_nocoh_top #(
   axi2chi_nocoh_rd_data #(
     .AxiDataWidth(AxiDataWidth),
     .AxiIdWidth(AxiIdWidth),
+    .AxlenWidth(AxlenWidth),
     .ChiDataWidth(ChiDataWidth),
     .CacheLineBytes(CacheLineBytes),
     .ParentEntries(ParentEntries),
@@ -488,6 +532,7 @@ module axi2chi_nocoh_top #(
     .fragment_lookup_valid_i(child_lookup_valid && !child_lookup_is_write),
     .fragment_parent_idx_i(child_lookup_parent_idx),
     .fragment_axi_id_i(child_lookup_axi_id),
+    .fragment_axi_beat_i(child_lookup_axi_beat),
     .fragment_data_i(rd_fragment_payload[64 +: ChiDataWidth]),
     .fragment_be_i(rd_fragment_payload[32 +: ChiBeWidth]),
     .fragment_resp_i(rd_fragment_payload[26 +: 2]),
@@ -499,6 +544,9 @@ module axi2chi_nocoh_top #(
     .fragment_byte_count_i(child_lookup_fragment_byte_count),
     .rd_rsp_parent_valid_o(rd_rsp_parent_valid),
     .rd_rsp_parent_idx_o(rd_rsp_parent_idx),
+    .rd_rsp_child_idx_o(rd_rsp_child_idx),
+    .rd_rsp_axi_beat_o(rd_rsp_axi_beat),
+    .rd_rsp_retire_permit_vec_i(parent_retire_permit_vec),
     .rd_rsp_valid_o(rd_rsp_valid),
     .rd_rsp_ready_i(rd_rsp_ready),
     .rd_rsp_id_o(rd_rsp_id),
@@ -523,6 +571,8 @@ module axi2chi_nocoh_top #(
     .wr_beat_strb_i(slave_wr_beat_strb),
     .wr_beat_last_i(slave_wr_beat_last),
     .child_bind_valid_i(wr_child_alloc_valid && wr_child_alloc_ready),
+    .child_bind_ready_o(wr_data_child_bind_ready),
+    .child_bind_parent_idx_i(wr_child_alloc_parent_idx),
     .child_bind_idx_i(wr_child_alloc_idx),
     .child_bind_last_fragment_i(child_alloc_last_fragment),
     .child_bind_axi_byte_offset_i(child_alloc_axi_byte_offset),
@@ -583,25 +633,18 @@ module axi2chi_nocoh_top #(
 
   always_ff @(posedge clk) begin
     if (rst) begin
-      wr_rsp_hold_valid_q <= 1'b0;
-      wr_outstanding_q <= 1'b0;
-      wr_active_axi_id_q <= '0;
-      wr_active_parent_idx_q <= '0;
-      wr_rsp_resp_q <= '0;
-    end else begin
-      if (wr_admit_fire) begin
-        wr_outstanding_q <= 1'b1;
-        wr_active_axi_id_q <= slave_wr_admit_id;
-        wr_active_parent_idx_q <= ctx_wr_admit_parent_idx;
+      wr_rsp_valid_q <= '0;
+      for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
+        wr_rsp_resp_q[idx] <= '0;
       end
-
-      if (wr_child_event_valid && child_event_parent_complete &&
-          child_event_parent_idx == wr_active_parent_idx_q) begin
-        wr_rsp_hold_valid_q <= 1'b1;
-        wr_rsp_resp_q <= child_event_parent_error ? 2'b10 : 2'b00;
-      end else if (wr_rsp_valid && wr_rsp_ready) begin
-        wr_rsp_hold_valid_q <= 1'b0;
-        wr_outstanding_q <= 1'b0;
+    end else begin
+      if (wr_child_event_valid && child_event_parent_complete) begin
+        wr_rsp_valid_q[child_event_parent_idx] <= 1'b1;
+        wr_rsp_resp_q[child_event_parent_idx] <=
+            child_event_parent_error ? 2'b10 : 2'b00;
+      end
+      if (wr_rsp_valid && wr_rsp_ready) begin
+        wr_rsp_valid_q[wr_rsp_selected_idx] <= 1'b0;
       end
     end
   end
@@ -609,9 +652,9 @@ module axi2chi_nocoh_top #(
 `ifndef SYNTHESIS
   always_ff @(posedge clk) begin
     if (!rst) begin
-      assert (!(wr_child_event_valid && wr_rsp_hold_valid_q &&
-          !(wr_rsp_valid && wr_rsp_ready)))
-      else $fatal(1, "Write response completed while B response is still pending");
+      assert (!(wr_child_event_valid && child_event_parent_complete &&
+          wr_rsp_valid_q[child_event_parent_idx]))
+      else $fatal(1, "Write response slot is already occupied");
     end
   end
 `endif

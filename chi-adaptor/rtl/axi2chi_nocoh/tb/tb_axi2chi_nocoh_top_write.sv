@@ -69,6 +69,8 @@ module tb_axi2chi_nocoh_top_write;
   logic chi_txlinkactiveack_i;
   logic chi_rxlinkactivereq_i;
   logic chi_rxlinkactiveack_o;
+  logic [ChiTxnidWidth-1:0] write_txnid;
+  logic [ChiTxnidWidth-1:0] cross_write_txnid;
 
   axi2chi_nocoh_top #(
     .AxiAddrWidth(AxiAddrWidth),
@@ -312,6 +314,7 @@ module tb_axi2chi_nocoh_top_write;
       end
       #1;
       `CHECK(chi_txreq_flitv_o);
+      write_txnid = chi_txreq_flit_o[16 +: ChiTxnidWidth];
       `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] ==
           32'h0000_3000 + (beat << 3));
       @(posedge clk);
@@ -323,6 +326,7 @@ module tb_axi2chi_nocoh_top_write;
 
       chi_rxrsp_flit_i = '0;
       chi_rxrsp_flit_i[3:0] = 4'h1;
+      chi_rxrsp_flit_i[8 +: ChiTxnidWidth] = write_txnid;
       chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'h80 + beat;
       chi_rxrsp_flit_i[36 +: 2] = 2'b00;
       chi_rxrsp_flitv_i = 1'b1;
@@ -368,6 +372,7 @@ module tb_axi2chi_nocoh_top_write;
 
       chi_rxrsp_flit_i = '0;
       chi_rxrsp_flit_i[3:0] = 4'h3;
+      chi_rxrsp_flit_i[8 +: ChiTxnidWidth] = write_txnid;
       chi_rxrsp_flit_i[36 +: 2] = 2'b00;
       chi_rxrsp_flitv_i = 1'b1;
       #1;
@@ -425,6 +430,7 @@ module tb_axi2chi_nocoh_top_write;
       `CHECK(chi_txreq_flitv_o);
       `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] ==
           (frag == 0 ? 32'h0000_303c : 32'h0000_3040));
+      cross_write_txnid = chi_txreq_flit_o[16 +: ChiTxnidWidth];
       chi_txreq_lcrdv_i = 1'b1;
       @(posedge clk);
       @(negedge clk);
@@ -432,6 +438,7 @@ module tb_axi2chi_nocoh_top_write;
 
       chi_rxrsp_flit_i = '0;
       chi_rxrsp_flit_i[3:0] = 4'h1;
+      chi_rxrsp_flit_i[8 +: ChiTxnidWidth] = cross_write_txnid;
       chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'ha0 + frag;
       chi_rxrsp_flit_i[36 +: 2] = 2'b00;
       chi_rxrsp_flitv_i = 1'b1;
@@ -476,6 +483,7 @@ module tb_axi2chi_nocoh_top_write;
 
       chi_rxrsp_flit_i = '0;
       chi_rxrsp_flit_i[3:0] = 4'h3;
+      chi_rxrsp_flit_i[8 +: ChiTxnidWidth] = cross_write_txnid;
       chi_rxrsp_flit_i[36 +: 2] = 2'b00;
       chi_rxrsp_flitv_i = 1'b1;
       #1;

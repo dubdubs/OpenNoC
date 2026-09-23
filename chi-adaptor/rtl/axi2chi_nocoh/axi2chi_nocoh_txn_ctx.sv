@@ -62,6 +62,12 @@ module axi2chi_nocoh_txn_ctx #(
   input logic child_release_valid_i,
   output logic child_release_ready_o,
   input logic [$clog2(ChildEntries)-1:0] child_release_idx_i,
+  // An AXI response handshake retires one read beat or an entire write
+  // parent.  txn_ctx owns the resulting child/TxnID release sequence.
+  input logic axi_beat_retire_valid_i,
+  input logic [$clog2(ParentEntries)-1:0] axi_beat_retire_parent_idx_i,
+  input logic [AxlenWidth-1:0] axi_beat_retire_beat_i,
+  input logic axi_beat_retire_all_i,
   input logic child_event_valid_i,
   input logic [$clog2(ChildEntries)-1:0] child_event_idx_i,
   input logic [2:0] child_event_type_i,
@@ -85,7 +91,14 @@ module axi2chi_nocoh_txn_ctx #(
   output logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_lookup_fragment_byte_count_o,
   input logic parent_retire_valid_i,
   input logic [$clog2(ParentEntries)-1:0] parent_retire_idx_i,
-  output logic parent_retire_ready_o
+  output logic parent_retire_ready_o,
+  input logic parent_retire_query_valid_i,
+  input logic [$clog2(ParentEntries)-1:0] parent_retire_query_idx_i,
+  output logic parent_retire_query_permit_o,
+  output logic [ParentEntries-1:0] parent_retire_permit_vec_o,
+  input logic parent_lookup_valid_i,
+  input logic [$clog2(ParentEntries)-1:0] parent_lookup_idx_i,
+  output logic [AxiIdWidth-1:0] parent_lookup_axi_id_o
 );
 
   localparam int unsigned ParentIndexWidth = $clog2(ParentEntries);
@@ -94,6 +107,7 @@ module axi2chi_nocoh_txn_ctx #(
   localparam int unsigned BeatCountWidth = $clog2(MaxAxiBeats + 1);
   localparam int unsigned AxiByteCountWidth = $clog2(AxiDataWidth / 8 + 1);
   localparam int unsigned LineOffsetWidth = $clog2(CacheLineBytes);
+  localparam int unsigned AxiIdCount = 1 << AxiIdWidth;
 
   typedef enum logic [2:0] {
     kChildEventReqSent,
@@ -147,6 +161,11 @@ module axi2chi_nocoh_txn_ctx #(
   logic [ParentEntries-1:0] parent_free_q;
   logic [ChildEntries-1:0] child_free_q;
   logic [TxnidEntries-1:0] txnid_valid_q;
+  logic [ChildEntries-1:0] child_release_pending_q;
+  logic [ParentIndexWidth-1:0] id_retire_fifo_q [AxiIdCount][ParentEntries];
+  logic [ParentIndexWidth-1:0] id_retire_wr_ptr_q [AxiIdCount];
+  logic [ParentIndexWidth-1:0] id_retire_rd_ptr_q [AxiIdCount];
+  logic [ParentIndexWidth:0] id_retire_count_q [AxiIdCount];
   logic [ChildIndexWidth-1:0] txnid_child_q [TxnidEntries];
   logic [ParentIndexWidth-1:0] parent_alloc_idx;
   logic parent_free_found;
@@ -162,6 +181,8 @@ module axi2chi_nocoh_txn_ctx #(
   logic txnid_free_found;
   logic child_alloc_fire;
   logic child_release_fire;
+  logic child_release_pending_found;
+  logic [ChildIndexWidth-1:0] child_release_pending_idx;
   logic child_event_fire;
   logic child_event_completes;
   logic child_completion_new;
@@ -205,14 +226,6 @@ module axi2chi_nocoh_txn_ctx #(
       if (parent_free_q[idx] && !parent_free_found) begin
         parent_alloc_idx = ParentIndexWidth'(idx);
         parent_free_found = 1'b1;
-      end
-      if (parent_q[idx].valid && !parent_q[idx].is_write &&
-          parent_q[idx].axi_id == rd_admit_id_i) begin
-        rd_id_blocked = 1'b1;
-      end
-      if (parent_q[idx].valid && parent_q[idx].is_write &&
-          parent_q[idx].axi_id == wr_admit_id_i) begin
-        wr_id_blocked = 1'b1;
       end
     end
     rd_admit_ready_o = 1'b0;
@@ -293,23 +306,45 @@ module axi2chi_nocoh_txn_ctx #(
     child_alloc_txnid_o = txnid_alloc_id;
     child_release_ready_o = 1'b0;
     parent_retire_ready_o = 1'b0;
+    parent_retire_query_permit_o = 1'b0;
+    parent_retire_permit_vec_o = '0;
+    for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
+      if (parent_q[idx].valid &&
+          id_retire_count_q[parent_q[idx].axi_id] != 0 &&
+          id_retire_fifo_q[parent_q[idx].axi_id]
+              [id_retire_rd_ptr_q[parent_q[idx].axi_id]] == ParentIndexWidth'(idx)) begin
+        parent_retire_permit_vec_o[idx] = 1'b1;
+      end
+    end
+    if (!rst && parent_retire_query_valid_i &&
+        parent_q[parent_retire_query_idx_i].valid) begin
+      parent_retire_query_permit_o = id_retire_count_q[
+          parent_q[parent_retire_query_idx_i].axi_id] != 0 &&
+          id_retire_fifo_q[parent_q[parent_retire_query_idx_i].axi_id]
+              [id_retire_rd_ptr_q[parent_q[parent_retire_query_idx_i].axi_id]] ==
+              parent_retire_query_idx_i;
+    end
 
     if (!rst && parent_free_found) begin
-      if (rd_admit_valid_i && !rd_id_blocked &&
-          wr_admit_valid_i && !wr_id_blocked) begin
+      if (rd_admit_valid_i && id_retire_count_q[rd_admit_id_i] < ParentEntries &&
+          wr_admit_valid_i && id_retire_count_q[wr_admit_id_i] < ParentEntries) begin
         if (admit_prefer_read_q) begin
           rd_admit_ready_o = 1'b1;
         end else begin
           wr_admit_ready_o = 1'b1;
         end
-      end else if (rd_admit_valid_i && !rd_id_blocked) begin
+      end else if (rd_admit_valid_i && id_retire_count_q[rd_admit_id_i] < ParentEntries) begin
         rd_admit_ready_o = 1'b1;
-      end else if (wr_admit_valid_i && !wr_id_blocked) begin
+      end else if (wr_admit_valid_i && id_retire_count_q[wr_admit_id_i] < ParentEntries) begin
         wr_admit_ready_o = 1'b1;
       end
     end
 
-    if (!rst && parent_q[parent_retire_idx_i].valid) begin
+    if (!rst && parent_q[parent_retire_idx_i].valid &&
+        id_retire_count_q[parent_q[parent_retire_idx_i].axi_id] != 0 &&
+        id_retire_fifo_q[parent_q[parent_retire_idx_i].axi_id]
+            [id_retire_rd_ptr_q[parent_q[parent_retire_idx_i].axi_id]] ==
+            parent_retire_idx_i) begin
       parent_retire_ready_o = 1'b1;
     end
 
@@ -318,15 +353,23 @@ module axi2chi_nocoh_txn_ctx #(
       child_alloc_ready_o = 1'b1;
     end
 
-    if (!rst && child_q[child_release_idx_i].valid) begin
-      child_release_ready_o = 1'b1;
+    child_release_pending_found = 1'b0;
+    child_release_pending_idx = '0;
+    for (int unsigned idx = 0; idx < ChildEntries; idx++) begin
+      if (child_release_pending_q[idx] && child_q[idx].valid &&
+          !child_release_pending_found) begin
+        child_release_pending_found = 1'b1;
+        child_release_pending_idx = ChildIndexWidth'(idx);
+      end
     end
+    // Legacy external release inputs are intentionally no longer consumed.
+    child_release_ready_o = child_release_pending_found;
 
     rd_admit_fire = rd_admit_valid_i && rd_admit_ready_o;
     wr_admit_fire = wr_admit_valid_i && wr_admit_ready_o;
     parent_retire_fire = parent_retire_valid_i && parent_retire_ready_o;
     child_alloc_fire = child_alloc_valid_i && child_alloc_ready_o;
-    child_release_fire = child_release_valid_i && child_release_ready_o;
+    child_release_fire = child_release_pending_found;
     child_event_fire = child_event_valid_i && child_q[child_event_idx_i].valid;
     rd_issue_fire = rd_issue_valid_o && rd_issue_ready_i;
     wr_issue_fire = wr_issue_valid_o && wr_issue_ready_i;
@@ -341,6 +384,10 @@ module axi2chi_nocoh_txn_ctx #(
     child_lookup_axi_byte_offset_o = '0;
     child_lookup_line_byte_offset_o = '0;
     child_lookup_fragment_byte_count_o = '0;
+    parent_lookup_axi_id_o = '0;
+    if (!rst && parent_lookup_valid_i && parent_q[parent_lookup_idx_i].valid) begin
+      parent_lookup_axi_id_o = parent_q[parent_lookup_idx_i].axi_id;
+    end
     if (!rst && child_lookup_valid_i && child_q[child_lookup_idx_i].valid &&
         parent_q[child_q[child_lookup_idx_i].parent_idx].valid) begin
       child_lookup_valid_o = 1'b1;
@@ -424,6 +471,7 @@ module axi2chi_nocoh_txn_ctx #(
       parent_free_q <= '1;
       child_free_q <= '1;
       txnid_valid_q <= '0;
+      child_release_pending_q <= '0;
       admit_prefer_read_q <= 1'b1;
       for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
         parent_q[idx] <= '0;
@@ -434,7 +482,30 @@ module axi2chi_nocoh_txn_ctx #(
       for (int unsigned idx = 0; idx < TxnidEntries; idx++) begin
         txnid_child_q[idx] <= '0;
       end
+      for (int unsigned idx = 0; idx < AxiIdCount; idx++) begin
+        id_retire_wr_ptr_q[idx] <= '0;
+        id_retire_rd_ptr_q[idx] <= '0;
+        id_retire_count_q[idx] <= '0;
+      end
     end else begin
+      if (rd_admit_fire || wr_admit_fire) begin
+        id_retire_fifo_q[rd_admit_fire ? rd_admit_id_i : wr_admit_id_i]
+            [id_retire_wr_ptr_q[rd_admit_fire ? rd_admit_id_i : wr_admit_id_i]] <=
+            parent_alloc_idx;
+        if (id_retire_wr_ptr_q[rd_admit_fire ? rd_admit_id_i : wr_admit_id_i] ==
+            ParentEntries - 1) begin
+          id_retire_wr_ptr_q[rd_admit_fire ? rd_admit_id_i : wr_admit_id_i] <= '0;
+        end else begin
+          id_retire_wr_ptr_q[rd_admit_fire ? rd_admit_id_i : wr_admit_id_i] <=
+              id_retire_wr_ptr_q[rd_admit_fire ? rd_admit_id_i : wr_admit_id_i] + 1'b1;
+        end
+        if (!(parent_retire_fire &&
+            parent_q[parent_retire_idx_i].axi_id ==
+            (rd_admit_fire ? rd_admit_id_i : wr_admit_id_i))) begin
+          id_retire_count_q[rd_admit_fire ? rd_admit_id_i : wr_admit_id_i] <=
+              id_retire_count_q[rd_admit_fire ? rd_admit_id_i : wr_admit_id_i] + 1'b1;
+        end
+      end
       if (rd_admit_fire) begin
         parent_free_q[parent_alloc_idx] <= 1'b0;
         parent_q[parent_alloc_idx].valid <= 1'b1;
@@ -476,6 +547,19 @@ module axi2chi_nocoh_txn_ctx #(
       if (parent_retire_fire) begin
         parent_q[parent_retire_idx_i].valid <= 1'b0;
         parent_free_q[parent_retire_idx_i] <= 1'b1;
+        if (id_retire_rd_ptr_q[parent_q[parent_retire_idx_i].axi_id] ==
+            ParentEntries - 1) begin
+          id_retire_rd_ptr_q[parent_q[parent_retire_idx_i].axi_id] <= '0;
+        end else begin
+          id_retire_rd_ptr_q[parent_q[parent_retire_idx_i].axi_id] <=
+              id_retire_rd_ptr_q[parent_q[parent_retire_idx_i].axi_id] + 1'b1;
+        end
+        if (!(rd_admit_fire || wr_admit_fire) ||
+            parent_q[parent_retire_idx_i].axi_id !=
+            (rd_admit_fire ? rd_admit_id_i : wr_admit_id_i)) begin
+          id_retire_count_q[parent_q[parent_retire_idx_i].axi_id] <=
+              id_retire_count_q[parent_q[parent_retire_idx_i].axi_id] - 1'b1;
+        end
       end
 
       if (child_alloc_fire) begin
@@ -537,9 +621,21 @@ module axi2chi_nocoh_txn_ctx #(
       end
 
       if (child_release_fire) begin
-        child_free_q[child_release_idx_i] <= 1'b1;
-        txnid_valid_q[child_q[child_release_idx_i].txnid] <= 1'b0;
-        child_q[child_release_idx_i].valid <= 1'b0;
+        child_free_q[child_release_pending_idx] <= 1'b1;
+        txnid_valid_q[child_q[child_release_pending_idx].txnid] <= 1'b0;
+        child_q[child_release_pending_idx].valid <= 1'b0;
+        child_release_pending_q[child_release_pending_idx] <= 1'b0;
+      end
+
+      if (axi_beat_retire_valid_i) begin
+        for (int unsigned idx = 0; idx < ChildEntries; idx++) begin
+          if (child_q[idx].valid &&
+              child_q[idx].parent_idx == axi_beat_retire_parent_idx_i &&
+              (axi_beat_retire_all_i ||
+               child_q[idx].axi_beat_idx == axi_beat_retire_beat_i)) begin
+            child_release_pending_q[idx] <= 1'b1;
+          end
+        end
       end
 
       if (child_event_fire) begin

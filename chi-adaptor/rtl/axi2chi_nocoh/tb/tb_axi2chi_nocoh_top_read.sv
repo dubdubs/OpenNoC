@@ -69,6 +69,9 @@ module tb_axi2chi_nocoh_top_read;
   logic chi_txlinkactiveack_i;
   logic chi_rxlinkactivereq_i;
   logic chi_rxlinkactiveack_o;
+  logic [ChiTxnidWidth-1:0] first_txnid;
+  logic [ChiTxnidWidth-1:0] second_txnid;
+  logic [ChiTxnidWidth-1:0] cross_fragment_txnid;
 
   axi2chi_nocoh_top #(
     .AxiAddrWidth(AxiAddrWidth),
@@ -149,6 +152,8 @@ module tb_axi2chi_nocoh_top_read;
       chi_txreq_lcrdv_i = 1'b0;
 
       chi_rxdat_flit_i = '0;
+      chi_rxdat_flit_i[8 +: ChiTxnidWidth] =
+          chi_txreq_flit_o[16 +: ChiTxnidWidth];
       chi_rxdat_flit_i[26 +: 2] = 2'b00;
       chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
       chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'hfeed_face_cafe_bee0 + beat;
@@ -306,11 +311,14 @@ module tb_axi2chi_nocoh_top_read;
       `CHECK(chi_txreq_flitv_o);
       `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] ==
           (frag == 0 ? 32'h0000_103c : 32'h0000_1040));
+      cross_fragment_txnid = chi_txreq_flit_o[16 +: ChiTxnidWidth];
       chi_txreq_lcrdv_i = 1'b1;
       @(posedge clk);
       @(negedge clk);
       chi_txreq_lcrdv_i = 1'b0;
       chi_rxdat_flit_i = '0;
+      chi_rxdat_flit_i[8 +: ChiTxnidWidth] =
+          cross_fragment_txnid;
       chi_rxdat_flit_i[26 +: 2] = 2'b00;
       chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
       chi_rxdat_flit_i[64 +: ChiDataWidth] =
@@ -385,6 +393,100 @@ module tb_axi2chi_nocoh_top_read;
     `CHECK(s_axi_rvalid && s_axi_rid == 2'd1);
     `CHECK(s_axi_rdata == 64'h0000_0000_ddcc_bbaa);
     `CHECK(s_axi_rlast && s_axi_rresp == 2'b00);
+    s_axi_rready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+
+    // Same-ID reads may complete out of order on CHI, but AXI R must retire
+    // them in AR acceptance order.
+    s_axi_arid = 2'd3;
+    s_axi_araddr = 32'h0000_1300;
+    s_axi_arlen = '0;
+    s_axi_arsize = 3'd3;
+    s_axi_arburst = 2'b01;
+    s_axi_arvalid = 1'b1;
+    s_axi_rready = 1'b0;
+    #1;
+    `CHECK(s_axi_arready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_arvalid = 1'b0;
+    s_axi_araddr = 32'h0000_1400;
+    s_axi_arvalid = 1'b1;
+    #1;
+    `CHECK(s_axi_arready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_arvalid = 1'b0;
+
+    repeat (8) begin
+      if (!chi_txreq_flitv_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(chi_txreq_flitv_o);
+    first_txnid = chi_txreq_flit_o[16 +: ChiTxnidWidth];
+    chi_txreq_lcrdv_i = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    chi_txreq_lcrdv_i = 1'b0;
+    repeat (8) begin
+      if (!chi_txreq_flitv_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(chi_txreq_flitv_o);
+    second_txnid = chi_txreq_flit_o[16 +: ChiTxnidWidth];
+    `CHECK(first_txnid != second_txnid);
+    chi_txreq_lcrdv_i = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    chi_txreq_lcrdv_i = 1'b0;
+
+    chi_rxdat_flit_i = '0;
+    chi_rxdat_flit_i[8 +: ChiTxnidWidth] = second_txnid;
+    chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
+    chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'h2222_2222_2222_2222;
+    chi_rxdat_flitv_i = 1'b1;
+    #1;
+    `CHECK(chi_rxdat_lcrdv_o);
+    @(posedge clk);
+    @(negedge clk);
+    chi_rxdat_flitv_i = 1'b0;
+    repeat (3) begin @(posedge clk); @(negedge clk); end
+    #1;
+    `CHECK(!s_axi_rvalid);
+
+    chi_rxdat_flit_i = '0;
+    chi_rxdat_flit_i[8 +: ChiTxnidWidth] = first_txnid;
+    chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
+    chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'h1111_1111_1111_1111;
+    chi_rxdat_flitv_i = 1'b1;
+    #1;
+    `CHECK(chi_rxdat_lcrdv_o);
+    @(posedge clk);
+    @(negedge clk);
+    chi_rxdat_flitv_i = 1'b0;
+    repeat (4) begin
+      if (!s_axi_rvalid) begin @(posedge clk); @(negedge clk); end
+    end
+    #1;
+    `CHECK(s_axi_rvalid && s_axi_rid == 2'd3);
+    `CHECK(s_axi_rdata == 64'h1111_1111_1111_1111);
+    s_axi_rready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_rready = 1'b0;
+    repeat (4) begin
+      if (!s_axi_rvalid) begin @(posedge clk); @(negedge clk); end
+    end
+    #1;
+    `CHECK(s_axi_rvalid && s_axi_rid == 2'd3);
+    `CHECK(s_axi_rdata == 64'h2222_2222_2222_2222);
     s_axi_rready = 1'b1;
     @(posedge clk);
     @(negedge clk);
