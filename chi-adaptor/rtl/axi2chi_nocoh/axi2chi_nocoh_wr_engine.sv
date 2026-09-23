@@ -11,7 +11,7 @@ module axi2chi_nocoh_wr_engine #(
   parameter int unsigned DatFlitWidth = 406,
   parameter int unsigned ParentEntries = 16,
   parameter int unsigned ChildEntries = 16,
-  parameter bit EnableWriteNoSnpFull = 1'b1
+  parameter bit EnableWriteNoSnpFull = 1'b0
 ) (
   input logic clk,
   input logic rst,
@@ -210,7 +210,10 @@ module axi2chi_nocoh_wr_engine #(
         child_q[idx] <= '0;
         txnid_q[idx] <= '0;
         dbid_q[idx] <= '0;
-        is_full_q[idx] <= EnableWriteNoSnpFull;
+        // Full eligibility depends on per-child line coverage and byte mask.
+        // Those fields are not present at this interface yet, so a write is
+        // conservatively encoded as Ptl even when the feature is enabled.
+        is_full_q[idx] <= 1'b0;
         addr_q[idx] <= '0;
         axi_beat_q[idx] <= '0;
         dat_payload_q[idx] <= '0;
@@ -222,7 +225,7 @@ module axi2chi_nocoh_wr_engine #(
         parent_q[issue_lane_idx] <= wr_issue_parent_idx_i;
         addr_q[issue_lane_idx] <= wr_issue_addr_i;
         axi_beat_q[issue_lane_idx] <= wr_issue_axi_beat_i;
-        is_full_q[issue_lane_idx] <= EnableWriteNoSnpFull;
+        is_full_q[issue_lane_idx] <= 1'b0;
         completion_seen_q[issue_lane_idx] <= 1'b0;
         state_q[issue_lane_idx] <= kWrAlloc;
       end

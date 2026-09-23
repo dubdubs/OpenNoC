@@ -138,7 +138,7 @@ module tb_axi2chi_nocoh_top_write;
     end
     #1;
     `CHECK(chi_txreq_flitv_o);
-    `CHECK(chi_txreq_flit_o[6:0] == 7'h19);
+    `CHECK(chi_txreq_flit_o[6:0] == 7'h18);
     `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] == 32'h0000_2000);
     @(posedge clk);
     @(negedge clk);

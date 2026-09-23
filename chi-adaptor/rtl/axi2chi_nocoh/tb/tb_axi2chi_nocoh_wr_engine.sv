@@ -105,7 +105,7 @@ module tb_axi2chi_nocoh_wr_engine;
     child_alloc_ready_i = 1'b0;
     #1;
     `CHECK(txreq_valid_o);
-    `CHECK(txreq_payload_o[6:0] == 7'h19);
+    `CHECK(txreq_payload_o[6:0] == 7'h18);
     `CHECK(txreq_payload_o[16 +: ChiTxnidWidth] == 4'h7);
     `CHECK(txreq_payload_o[32 +: AxiAddrWidth] == 64'hcc00_0010);
     txreq_ready_i = 1'b1;
