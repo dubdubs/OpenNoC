@@ -1,6 +1,7 @@
 axi2chi_nocoh_top.sv
 axi2chi_nocoh_slave.sv
 axi2chi_nocoh_txn_ctx.sv
+axi2chi_nocoh_fragment.sv
 axi2chi_nocoh_rd_engine.sv
 axi2chi_nocoh_wr_engine.sv
 axi2chi_nocoh_rd_data.sv
