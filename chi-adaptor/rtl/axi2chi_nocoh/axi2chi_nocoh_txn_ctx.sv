@@ -150,6 +150,24 @@ module axi2chi_nocoh_txn_ctx #(
   logic [BeatCountWidth-1:0] parent_completed_beat_next;
   logic [BeatCountWidth-1:0] parent_expected_beat_count;
 
+  // The frozen profile supports only FIXED and INCR.  Admission owns rejection
+  // of unsupported burst encodings; an admitted command is therefore either
+  // FIXED or INCR, and this datapath does not encode WRAP behavior.
+  function automatic logic [AxiAddrWidth-1:0] axi_beat_addr(
+      input logic [AxiAddrWidth-1:0] start_addr,
+      input logic [AxsizeWidth-1:0] size,
+      input logic [1:0] burst,
+      input logic [BeatIndexWidth-1:0] beat_idx);
+    logic [AxiAddrWidth-1:0] advanced_addr;
+    begin
+      advanced_addr = start_addr + (AxiAddrWidth'(beat_idx) << size);
+      unique case (burst)
+        2'b00: axi_beat_addr = start_addr;
+        default: axi_beat_addr = advanced_addr;
+      endcase
+    end
+  endfunction
+
   always_comb begin
     parent_alloc_idx = '0;
     parent_free_found = 1'b0;
@@ -190,9 +208,9 @@ module axi2chi_nocoh_txn_ctx #(
         rd_issue_valid_o = !rst;
         rd_issue_parent_idx_o = ParentIndexWidth'(idx);
         rd_issue_axi_beat_o = parent_q[idx].next_issue_beat;
-        rd_issue_addr_o = parent_q[idx].start_addr +
-            (AxiAddrWidth'(parent_q[idx].next_issue_beat) <<
-            parent_q[idx].size);
+        rd_issue_addr_o = axi_beat_addr(parent_q[idx].start_addr,
+            parent_q[idx].size, parent_q[idx].burst,
+            parent_q[idx].next_issue_beat);
       end
       if (!wr_issue_valid_o && parent_q[idx].valid &&
           parent_q[idx].is_write &&
@@ -201,9 +219,9 @@ module axi2chi_nocoh_txn_ctx #(
         wr_issue_valid_o = !rst;
         wr_issue_parent_idx_o = ParentIndexWidth'(idx);
         wr_issue_axi_beat_o = parent_q[idx].next_issue_beat;
-        wr_issue_addr_o = parent_q[idx].start_addr +
-            (AxiAddrWidth'(parent_q[idx].next_issue_beat) <<
-            parent_q[idx].size);
+        wr_issue_addr_o = axi_beat_addr(parent_q[idx].start_addr,
+            parent_q[idx].size, parent_q[idx].burst,
+            parent_q[idx].next_issue_beat);
       end
     end
     child_alloc_idx = '0;

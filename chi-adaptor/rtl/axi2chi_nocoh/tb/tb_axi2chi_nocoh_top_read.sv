@@ -179,6 +179,7 @@ module tb_axi2chi_nocoh_top_read;
 
     s_axi_arid = 2'd3;
     s_axi_araddr = 32'h0000_1100;
+    s_axi_arlen = 8'd0;
     s_axi_arvalid = 1'b1;
     s_axi_rready = 1'b0;
     #1;
@@ -225,7 +226,64 @@ module tb_axi2chi_nocoh_top_read;
     @(posedge clk);
     @(negedge clk);
 
-    $display("PASS: top-level AXI read to CHI TXREQ/RXDAT/R response");
+    // FIXED burst still allocates one child per AXI beat, but every CHI
+    // request must retain the admitted AXI address.
+    s_axi_arid = 2'd0;
+    s_axi_araddr = 32'h0000_1200;
+    s_axi_arlen = 8'd1;
+    s_axi_arsize = 3'd3;
+    s_axi_arburst = 2'b00;
+    s_axi_arvalid = 1'b1;
+    s_axi_rready = 1'b0;
+    #1;
+    `CHECK(s_axi_arready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_arvalid = 1'b0;
+
+    for (int unsigned beat = 0; beat < 2; beat++) begin
+      repeat (4) begin
+        if (!chi_txreq_flitv_o) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(chi_txreq_flitv_o);
+      `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] == 32'h0000_1200);
+      chi_txreq_lcrdv_i = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      chi_txreq_lcrdv_i = 1'b0;
+
+      chi_rxdat_flit_i = '0;
+      chi_rxdat_flit_i[26 +: 2] = 2'b00;
+      chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
+      chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'hf1ed_0000_0000_0000 + beat;
+      chi_rxdat_flitv_i = 1'b1;
+      #1;
+      `CHECK(chi_rxdat_lcrdv_o);
+      @(posedge clk);
+      @(negedge clk);
+      chi_rxdat_flitv_i = 1'b0;
+      repeat (4) begin
+        if (!s_axi_rvalid) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(s_axi_rvalid);
+      `CHECK(s_axi_rid == 2'd0);
+      `CHECK(s_axi_rdata == 64'hf1ed_0000_0000_0000 + beat);
+      `CHECK(s_axi_rlast == (beat == 1));
+      s_axi_rready = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      s_axi_rready = 1'b0;
+    end
+
+    $display("PASS: top-level AXI read including FIXED burst addressing");
     $finish;
   end
 endmodule
