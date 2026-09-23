@@ -213,7 +213,56 @@ module tb_axi2chi_nocoh_slave_admission;
     s_axi_arvalid = 1'b0;
     #1;
     `CHECK(!wr_admit_valid_o && !rd_admit_valid_o);
-    $display("PASS: slave AR/AW admission and W-order handshake");
+
+    s_axi_arid = 4'he;
+    s_axi_arlen = 8'd1;
+    s_axi_arburst = 2'b10;
+    s_axi_arvalid = 1'b1;
+    #1;
+    `CHECK(s_axi_arready && !rd_admit_valid_o);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_arvalid = 1'b0;
+    repeat (2) begin
+      #1;
+      `CHECK(s_axi_rvalid && s_axi_rid == 4'he && s_axi_rresp == 2'b11);
+      s_axi_rready = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      s_axi_rready = 1'b0;
+    end
+    #1;
+    `CHECK(!s_axi_rvalid);
+
+    s_axi_awid = 4'hd;
+    s_axi_awlen = 8'd1;
+    s_axi_awburst = 2'b10;
+    s_axi_awvalid = 1'b1;
+    #1;
+    `CHECK(s_axi_awready && !wr_admit_valid_o);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_awvalid = 1'b0;
+    s_axi_wvalid = 1'b1;
+    s_axi_wlast = 1'b0;
+    #1;
+    `CHECK(s_axi_wready && !wr_beat_valid_o);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_wlast = 1'b1;
+    #1;
+    `CHECK(s_axi_wready && !wr_beat_valid_o);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_wvalid = 1'b0;
+    #1;
+    `CHECK(s_axi_bvalid && s_axi_bid == 4'hd && s_axi_bresp == 2'b11);
+    s_axi_bready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_bready = 1'b0;
+    `CHECK(!s_axi_bvalid);
+    $display("PASS: slave admission, W-order, and WRAP DECERR rejection");
     $finish;
   end
 endmodule
