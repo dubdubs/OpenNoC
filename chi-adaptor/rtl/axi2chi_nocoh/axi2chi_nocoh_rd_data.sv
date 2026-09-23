@@ -6,6 +6,7 @@ module axi2chi_nocoh_rd_data #(
   parameter int unsigned AxiDataWidth = 128,
   parameter int unsigned AxiIdWidth = 4,
   parameter int unsigned ChiDataWidth = 256,
+  parameter int unsigned CacheLineBytes = 64,
   parameter int unsigned ParentEntries = 16,
   parameter int unsigned ChildEntries = 16
 ) (
@@ -21,6 +22,9 @@ module axi2chi_nocoh_rd_data #(
   input logic [ChiDataWidth / 8-1:0] fragment_be_i,
   input logic [1:0] fragment_resp_i,
   input logic fragment_last_i,
+  input logic [$clog2(AxiDataWidth / 8 + 1)-1:0] fragment_axi_byte_offset_i,
+  input logic [$clog2(CacheLineBytes)-1:0] fragment_line_byte_offset_i,
+  input logic [$clog2(AxiDataWidth / 8 + 1)-1:0] fragment_byte_count_i,
   output logic rd_rsp_parent_valid_o,
   output logic [$clog2(ParentEntries)-1:0] rd_rsp_parent_idx_o,
   output logic rd_rsp_valid_o,
@@ -54,10 +58,26 @@ module axi2chi_nocoh_rd_data #(
   logic [AxiIdWidth-1:0] fragment_rsp_id;
   logic [AxiDataWidth-1:0] fragment_rsp_data;
   logic [1:0] fragment_rsp_resp;
+  logic [AxiDataWidth-1:0] mapped_axi_data;
+  logic [AxiDataWidth / 8-1:0] mapped_axi_be;
+
+  axi2chi_nocoh_rd_byte_map #(
+    .AxiDataWidth(AxiDataWidth),
+    .ChiDataWidth(ChiDataWidth),
+    .CacheLineBytes(CacheLineBytes)
+  ) rd_byte_map (
+    .chi_data_i(fragment_data_i),
+    .chi_be_i(fragment_be_i),
+    .axi_byte_offset_i(fragment_axi_byte_offset_i),
+    .fragment_byte_count_i(fragment_byte_count_i),
+    .line_byte_offset_i(fragment_line_byte_offset_i),
+    .axi_data_o(mapped_axi_data),
+    .axi_valid_be_o(mapped_axi_be)
+  );
 
   always_comb begin
     fragment_rsp_id = fragment_axi_id_i;
-    fragment_rsp_data = fragment_data_i[AxiDataWidth-1:0];
+    fragment_rsp_data = mapped_axi_data;
     fragment_rsp_resp = (!fragment_lookup_valid_i || fragment_resp_i[1]) ? 2'b10 : 2'b00;
     fragment_ready_o = fragment_lookup_valid_i && (!rsp_hold_valid_q || rd_rsp_ready_i);
     rd_rsp_parent_valid_o = rsp_hold_parent_valid_q;
@@ -92,6 +112,11 @@ module axi2chi_nocoh_rd_data #(
         rsp_hold_data_q <= fragment_rsp_data;
         rsp_hold_resp_q <= fragment_rsp_resp;
         rsp_hold_last_q <= fragment_last_i;
+        assembly_q[fragment_child_idx_i].data <= mapped_axi_data;
+        assembly_q[fragment_child_idx_i].valid_byte_mask <= mapped_axi_be;
+        assembly_q[fragment_child_idx_i].error_byte_mask <=
+            {AxiDataWidth / 8 {fragment_resp_i[1]}} & mapped_axi_be;
+        assembly_q[fragment_child_idx_i].resp <= fragment_rsp_resp;
       end else if (rsp_fire) begin
         rsp_hold_valid_q <= 1'b0;
         rsp_hold_parent_valid_q <= 1'b0;

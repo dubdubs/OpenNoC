@@ -453,6 +453,7 @@ module axi2chi_nocoh_top #(
     .AxiDataWidth(AxiDataWidth),
     .AxiIdWidth(AxiIdWidth),
     .ChiDataWidth(ChiDataWidth),
+    .CacheLineBytes(CacheLineBytes),
     .ParentEntries(ParentEntries),
     .ChildEntries(ChildEntries)
   ) rd_data (
@@ -468,6 +469,9 @@ module axi2chi_nocoh_top #(
     .fragment_be_i(rd_fragment_payload[32 +: ChiBeWidth]),
     .fragment_resp_i(rd_fragment_payload[26 +: 2]),
     .fragment_last_i(child_lookup_last),
+    .fragment_axi_byte_offset_i(child_lookup_axi_byte_offset),
+    .fragment_line_byte_offset_i(child_lookup_line_byte_offset),
+    .fragment_byte_count_i(child_lookup_fragment_byte_count),
     .rd_rsp_parent_valid_o(rd_rsp_parent_valid),
     .rd_rsp_parent_idx_o(rd_rsp_parent_idx),
     .rd_rsp_valid_o(rd_rsp_valid),
