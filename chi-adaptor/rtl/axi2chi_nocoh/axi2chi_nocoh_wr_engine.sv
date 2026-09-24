@@ -47,6 +47,7 @@ module axi2chi_nocoh_wr_engine #(
   input logic [$clog2(ChildEntries)-1:0] wr_fragment_child_idx_i,
   input logic [DatFlitWidth-1:0] wr_fragment_payload_i,
   input logic wr_fragment_last_i,
+  input logic wr_fragment_error_i,
   output logic wr_fragment_ready_o,
   output logic [ChildEntries-1:0] wr_wait_child_vec_o
 );
@@ -276,6 +277,7 @@ module axi2chi_nocoh_wr_engine #(
       if (wr_fragment_fire) begin
         dat_payload_q[w_lane_idx] <= wr_fragment_payload_i;
         dat_last_q[w_lane_idx] <= wr_fragment_last_i;
+        resp_q[w_lane_idx] <= wr_fragment_error_i ? 2'b10 : resp_q[w_lane_idx];
         state_q[w_lane_idx] <= kWrIssueDat;
       end
 

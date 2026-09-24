@@ -146,6 +146,7 @@ module axi2chi_nocoh_top #(
   logic [AxiDataWidth-1:0] slave_wr_beat_data;
   logic [AxiStrbWidth-1:0] slave_wr_beat_strb;
   logic slave_wr_beat_last;
+  logic slave_wr_beat_error;
   logic ctx_rd_admit_ready;
   logic [ParentIndexWidth-1:0] ctx_rd_admit_parent_idx;
   logic ctx_wr_admit_ready;
@@ -217,6 +218,7 @@ module axi2chi_nocoh_top #(
   logic [ChildIndexWidth-1:0] wr_data_fragment_child_idx;
   logic [DataIdWidth-1:0] wr_data_fragment_dataid;
   logic wr_data_fragment_last;
+  logic wr_data_fragment_error;
   logic [ChiDataWidth-1:0] wr_data_fragment_data;
   logic [ChiBeWidth-1:0] wr_data_fragment_be;
   logic [DatFlitWidth-1:0] wr_fragment_payload;
@@ -404,6 +406,7 @@ module axi2chi_nocoh_top #(
     .wr_beat_data_o(slave_wr_beat_data),
     .wr_beat_strb_o(slave_wr_beat_strb),
     .wr_beat_last_o(slave_wr_beat_last),
+    .wr_beat_error_o(slave_wr_beat_error),
     .rd_rsp_valid_i(rd_rsp_valid),
     .rd_rsp_ready_o(rd_rsp_ready),
     .rd_rsp_id_i(rd_rsp_id),
@@ -620,6 +623,7 @@ module axi2chi_nocoh_top #(
     .wr_beat_data_i(slave_wr_beat_data),
     .wr_beat_strb_i(slave_wr_beat_strb),
     .wr_beat_last_i(slave_wr_beat_last),
+    .wr_beat_error_i(slave_wr_beat_error),
     .child_bind_valid_i(wr_child_alloc_valid && wr_child_alloc_ready),
     .child_waiting_i(wr_wait_child_vec),
     .child_bind_ready_o(wr_data_child_bind_ready),
@@ -634,6 +638,7 @@ module axi2chi_nocoh_top #(
     .txdat_fragment_child_idx_o(wr_data_fragment_child_idx),
     .txdat_fragment_dataid_o(wr_data_fragment_dataid),
     .txdat_fragment_last_o(wr_data_fragment_last),
+    .txdat_fragment_error_o(wr_data_fragment_error),
     .txdat_fragment_data_o(wr_data_fragment_data),
     .txdat_fragment_be_o(wr_data_fragment_be)
   );
@@ -682,6 +687,7 @@ module axi2chi_nocoh_top #(
     .wr_fragment_child_idx_i(wr_data_fragment_child_idx),
     .wr_fragment_payload_i(wr_fragment_payload),
     .wr_fragment_last_i(wr_data_fragment_last),
+    .wr_fragment_error_i(wr_data_fragment_error),
     .wr_fragment_ready_o(wr_data_fragment_ready),
     .wr_wait_child_vec_o(wr_wait_child_vec)
   );

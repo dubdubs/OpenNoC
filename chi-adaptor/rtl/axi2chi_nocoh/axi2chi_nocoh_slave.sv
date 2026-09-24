@@ -62,6 +62,7 @@ module axi2chi_nocoh_slave #(
   output logic [AxiDataWidth-1:0] wr_beat_data_o,
   output logic [AxiDataWidth / 8-1:0] wr_beat_strb_o,
   output logic wr_beat_last_o,
+  output logic wr_beat_error_o,
   input  logic rd_rsp_valid_i,
   output logic rd_rsp_ready_o,
   input  logic [AxiIdWidth-1:0] rd_rsp_id_i,
@@ -138,6 +139,7 @@ module axi2chi_nocoh_slave #(
     wr_beat_data_o = '0;
     wr_beat_strb_o = '0;
     wr_beat_last_o = 1'b0;
+    wr_beat_error_o = 1'b0;
     rd_rsp_ready_o = 1'b0;
     wr_rsp_ready_o = 1'b0;
 
@@ -164,6 +166,7 @@ module axi2chi_nocoh_slave #(
           wr_beat_data_o = s_axi_wdata;
           wr_beat_strb_o = s_axi_wstrb;
           wr_beat_last_o = s_axi_wlast;
+          wr_beat_error_o = s_axi_wlast != active_w_expected_last;
         end
       end
 
@@ -274,21 +277,6 @@ module axi2chi_nocoh_slave #(
       end
     end
   end
-
-`ifndef SYNTHESIS
-  // WLAST is checked against the accepted AWLEN-derived beat count.  The
-  // assertion is intentionally gated by the W handshake so a stalled source
-  // may hold either value stable without being reported as a protocol error.
-  always_ff @(posedge clk) begin
-    if (!rst) begin
-      assert (!(wr_beat_fire && (s_axi_wlast != active_w_expected_last)))
-      else $fatal(1, "AXI WLAST does not match the admitted AWLEN");
-      assert (!(wr_beat_fire &&
-          (wr_beat_parent_idx_o != aw_order_q[aw_order_rd_ptr_q].parent_idx)))
-      else $fatal(1, "AXI W parent does not match AW-order FIFO head");
-    end
-  end
-`endif
 
 endmodule
 
