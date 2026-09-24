@@ -1,4 +1,4 @@
-// Profile-neutral CHI transport owner skeleton.
+// Profile-neutral CHI transport owner.
 
 `default_nettype none
 

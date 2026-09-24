@@ -1,4 +1,4 @@
-// Raw CHI channel register and LinkActive state skeleton.
+// Raw CHI channel register and LinkActive state.
 
 `default_nettype none
 

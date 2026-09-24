@@ -47,6 +47,9 @@ module tb_axi2chi_nocoh_rd_engine;
   logic [$clog2(ChildEntries)-1:0] rd_fragment_child_idx_o;
   logic [DatFlitWidth-1:0] rd_fragment_payload_o;
   logic rd_fragment_ready_i;
+  logic rd_child_complete_valid_i;
+  logic [$clog2(ChildEntries)-1:0] rd_child_complete_idx_i;
+  logic unknown_rxdat_fire_o;
 
   axi2chi_nocoh_rd_engine #(
     .AxiAddrWidth(AxiAddrWidth),
@@ -75,6 +78,8 @@ module tb_axi2chi_nocoh_rd_engine;
     rxrsp_valid_i = 1'b0;
     rxrsp_payload_i = '0;
     rd_fragment_ready_i = 1'b0;
+    rd_child_complete_valid_i = 1'b0;
+    rd_child_complete_idx_i = '0;
 
     #1;
     `CHECK(!rd_issue_ready_o);
@@ -133,12 +138,15 @@ module tb_axi2chi_nocoh_rd_engine;
     @(negedge clk);
     rd_fragment_ready_i = 1'b0;
     #1;
-    `CHECK(child_event_valid_o);
-    `CHECK(child_event_idx_o == 2'd3);
-    `CHECK(child_event_type_o == 3'd4);
+    `CHECK(!child_event_valid_o);
+    rd_child_complete_idx_i = 2'd3;
+    rd_child_complete_valid_i = 1'b1;
+    #1;
+    `CHECK(!rxdat_ready_o);
     @(posedge clk);
 
     @(negedge clk);
+    rd_child_complete_valid_i = 1'b0;
     #1;
     `CHECK(rd_issue_ready_o);
     `CHECK(!child_event_valid_o);

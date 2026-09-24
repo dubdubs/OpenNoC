@@ -1,4 +1,4 @@
-// One CHI channel credit counter skeleton.
+// One CHI channel credit counter.
 
 `default_nettype none
 

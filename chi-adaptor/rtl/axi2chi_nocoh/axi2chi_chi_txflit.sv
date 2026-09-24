@@ -1,4 +1,4 @@
-// TXREQ/TXDAT queue and arbitration skeleton.
+// TXREQ/TXDAT queue and arbitration.
 
 `default_nettype none
 

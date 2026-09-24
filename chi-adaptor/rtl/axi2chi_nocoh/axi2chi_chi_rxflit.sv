@@ -1,4 +1,4 @@
-// RXRSP/RXDAT FIFO ownership and L-credit return skeleton.
+// RXRSP/RXDAT FIFO ownership and L-credit return.
 
 `default_nettype none
 

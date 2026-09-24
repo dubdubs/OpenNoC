@@ -47,6 +47,7 @@ module tb_axi2chi_nocoh_txn_ctx_child;
   logic [AxiAddrWidth-1:0] wr_issue_addr_o;
   logic [AxlenWidth-1:0] wr_issue_axi_beat_o;
   logic [1:0] wr_issue_frag_idx_o;
+  logic wr_issue_full_candidate_o;
   logic child_alloc_valid_i;
   logic child_alloc_ready_o;
   logic [$clog2(ParentEntries)-1:0] child_alloc_parent_idx_i;

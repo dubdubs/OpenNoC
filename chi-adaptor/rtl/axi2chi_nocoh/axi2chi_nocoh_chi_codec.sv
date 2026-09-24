@@ -1,4 +1,4 @@
-// Profile-specific canonical CHI codec skeleton.
+// Profile-specific canonical CHI codec.
 
 `default_nettype none
 

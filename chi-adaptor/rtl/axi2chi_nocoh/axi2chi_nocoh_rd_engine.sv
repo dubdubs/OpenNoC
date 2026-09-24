@@ -1,4 +1,4 @@
-// ReadNoSnp child scheduler and control-state skeleton.
+// ReadNoSnp child scheduler and control state.
 
 `default_nettype none
 

@@ -20,13 +20,26 @@ module tb_axi2chi_nocoh_wr_data;
   logic [AxiDataWidth-1:0] wr_beat_data_i;
   logic [AxiDataWidth / 8-1:0] wr_beat_strb_i;
   logic wr_beat_last_i;
+  logic wr_beat_error_i;
   logic child_bind_valid_i;
+  logic [ChildEntries-1:0] child_waiting_i;
+  logic child_bind_ready_o;
+  logic [$clog2(ParentEntries)-1:0] child_bind_parent_idx_i;
   logic [$clog2(ChildEntries)-1:0] child_bind_idx_i;
+  logic child_bind_last_fragment_i;
+  logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_bind_axi_byte_offset_i;
+  logic [$clog2(64)-1:0] child_bind_line_byte_offset_i;
+  logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_bind_fragment_byte_count_i;
   logic txdat_fragment_valid_o;
   logic txdat_fragment_ready_i;
   logic [$clog2(ChildEntries)-1:0] txdat_fragment_child_idx_o;
+  logic [$clog2(64 / (ChiDataWidth / 8))-1:0] txdat_fragment_dataid_o;
+  logic txdat_fragment_last_o;
+  logic txdat_fragment_error_o;
   logic [ChiDataWidth-1:0] txdat_fragment_data_o;
   logic [ChiDataWidth / 8-1:0] txdat_fragment_be_o;
+  logic [ParentEntries-1:0] wr_beat_present_vec_o;
+  logic [ParentEntries-1:0] wr_beat_full_vec_o;
 
   axi2chi_nocoh_wr_data #(
     .AxiDataWidth(AxiDataWidth),
@@ -43,8 +56,15 @@ module tb_axi2chi_nocoh_wr_data;
     wr_beat_data_i = '0;
     wr_beat_strb_i = '0;
     wr_beat_last_i = 1'b0;
+    wr_beat_error_i = 1'b0;
     child_bind_valid_i = 1'b0;
+    child_waiting_i = '0;
+    child_bind_parent_idx_i = '0;
     child_bind_idx_i = '0;
+    child_bind_last_fragment_i = 1'b1;
+    child_bind_axi_byte_offset_i = '0;
+    child_bind_line_byte_offset_i = '0;
+    child_bind_fragment_byte_count_i = 4'd8;
     txdat_fragment_ready_i = 1'b0;
 
     @(negedge clk);
@@ -53,13 +73,15 @@ module tb_axi2chi_nocoh_wr_data;
     wr_beat_data_i = 64'h0123_4567_89ab_cdef;
     wr_beat_strb_i = 8'hf3;
     #1;
-    `CHECK(!wr_beat_ready_o);
+    `CHECK(wr_beat_ready_o);
     `CHECK(!txdat_fragment_valid_o);
 
     child_bind_valid_i = 1'b1;
     child_bind_idx_i = 2'd3;
+    child_waiting_i[3] = 1'b1;
     #1;
     `CHECK(wr_beat_ready_o);
+    `CHECK(child_bind_ready_o);
     @(posedge clk);
 
     @(negedge clk);
@@ -69,6 +91,11 @@ module tb_axi2chi_nocoh_wr_data;
     `CHECK(txdat_fragment_valid_o);
     `CHECK(!wr_beat_ready_o);
     `CHECK(txdat_fragment_child_idx_o == 2'd3);
+    `CHECK(txdat_fragment_dataid_o == '0);
+    `CHECK(txdat_fragment_last_o);
+    `CHECK(!txdat_fragment_error_o);
+    `CHECK(wr_beat_present_vec_o[0]);
+    `CHECK(!wr_beat_full_vec_o[0]);
     `CHECK(txdat_fragment_data_o == 128'h0000_0000_0000_0000_0123_4567_89ab_cdef);
     `CHECK(txdat_fragment_be_o == 16'h00f3);
 

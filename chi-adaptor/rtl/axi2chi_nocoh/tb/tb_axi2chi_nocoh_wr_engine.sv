@@ -56,6 +56,7 @@ module tb_axi2chi_nocoh_wr_engine;
   logic wr_fragment_error_i;
   logic wr_fragment_ready_o;
   logic [ChildEntries-1:0] wr_wait_child_vec_o;
+  logic unknown_rxrsp_fire_o;
 
   axi2chi_nocoh_wr_engine #(
     .AxiAddrWidth(AxiAddrWidth),

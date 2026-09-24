@@ -1,4 +1,4 @@
-// WriteNoSnpPtl/WriteNoSnpFull child scheduler and control-state skeleton.
+// WriteNoSnpPtl/WriteNoSnpFull child scheduler and control state.
 
 `default_nettype none
 
@@ -241,9 +241,8 @@ module axi2chi_nocoh_wr_engine #(
         child_q[idx] <= '0;
         txnid_q[idx] <= '0;
         dbid_q[idx] <= '0;
-        // Full eligibility depends on per-child line coverage and byte mask.
-        // Those fields are not present at this interface yet, so a write is
-        // conservatively encoded as Ptl even when the feature is enabled.
+        // The registered opcode qualifier is cleared with the child slot.
+        // A later TXREQ handshake records the qualified Full/Ptl decision.
         is_full_q[idx] <= 1'b0;
         full_candidate_q[idx] <= 1'b0;
         addr_q[idx] <= '0;
