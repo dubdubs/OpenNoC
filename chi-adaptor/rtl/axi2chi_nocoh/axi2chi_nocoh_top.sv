@@ -21,6 +21,7 @@ module axi2chi_nocoh_top #(
   parameter int unsigned ReqFlitWidth = 131,
   parameter int unsigned RspFlitWidth = 73,
   parameter int unsigned DatFlitWidth = 406
+  ,parameter bit EnableWriteNoSnpFull = 1'b0
 ) (
   input  logic                         clk,
   input  logic                         aresetn,
@@ -162,6 +163,7 @@ module axi2chi_nocoh_top #(
   logic [AxiAddrWidth-1:0] ctx_wr_issue_addr;
   logic [AxlenWidth-1:0] ctx_wr_issue_axi_beat;
   logic [1:0] ctx_wr_issue_frag_idx;
+  logic ctx_wr_issue_full_candidate;
   logic rd_core_txreq_valid;
   logic [ReqFlitWidth-1:0] rd_core_txreq_payload;
   logic rd_core_txreq_ready;
@@ -219,6 +221,8 @@ module axi2chi_nocoh_top #(
   logic [DataIdWidth-1:0] wr_data_fragment_dataid;
   logic wr_data_fragment_last;
   logic wr_data_fragment_error;
+  logic [ParentEntries-1:0] wr_beat_present_vec;
+  logic [ParentEntries-1:0] wr_beat_full_vec;
   logic [ChiDataWidth-1:0] wr_data_fragment_data;
   logic [ChiBeWidth-1:0] wr_data_fragment_be;
   logic [DatFlitWidth-1:0] wr_fragment_payload;
@@ -461,6 +465,7 @@ module axi2chi_nocoh_top #(
     .wr_issue_addr_o(ctx_wr_issue_addr),
     .wr_issue_axi_beat_o(ctx_wr_issue_axi_beat),
     .wr_issue_frag_idx_o(ctx_wr_issue_frag_idx),
+    .wr_issue_full_candidate_o(ctx_wr_issue_full_candidate),
     .child_alloc_valid_i(child_alloc_valid),
     .child_alloc_ready_o(child_alloc_ready),
     .child_alloc_parent_idx_i(child_alloc_parent_idx),
@@ -639,6 +644,8 @@ module axi2chi_nocoh_top #(
     .txdat_fragment_dataid_o(wr_data_fragment_dataid),
     .txdat_fragment_last_o(wr_data_fragment_last),
     .txdat_fragment_error_o(wr_data_fragment_error),
+    .wr_beat_present_vec_o(wr_beat_present_vec),
+    .wr_beat_full_vec_o(wr_beat_full_vec),
     .txdat_fragment_data_o(wr_data_fragment_data),
     .txdat_fragment_be_o(wr_data_fragment_be)
   );
@@ -651,7 +658,8 @@ module axi2chi_nocoh_top #(
     .RspFlitWidth(RspFlitWidth),
     .DatFlitWidth(DatFlitWidth),
     .ParentEntries(ParentEntries),
-    .ChildEntries(ChildEntries)
+    .ChildEntries(ChildEntries),
+    .EnableWriteNoSnpFull(EnableWriteNoSnpFull)
   ) wr_engine (
     .clk(clk),
     .rst(rst),
@@ -661,6 +669,9 @@ module axi2chi_nocoh_top #(
     .wr_issue_addr_i(ctx_wr_issue_addr),
     .wr_issue_axi_beat_i(ctx_wr_issue_axi_beat),
     .wr_issue_frag_idx_i(ctx_wr_issue_frag_idx),
+    .wr_issue_full_candidate_i(ctx_wr_issue_full_candidate),
+    .wr_beat_present_vec_i(wr_beat_present_vec),
+    .wr_beat_full_vec_i(wr_beat_full_vec),
     .child_alloc_valid_o(wr_child_alloc_valid),
     .child_alloc_ready_i(wr_child_alloc_ready),
     .child_alloc_parent_idx_o(wr_child_alloc_parent_idx),

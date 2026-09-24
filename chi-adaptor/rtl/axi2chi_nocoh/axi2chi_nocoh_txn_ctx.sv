@@ -46,6 +46,7 @@ module axi2chi_nocoh_txn_ctx #(
   output logic [AxiAddrWidth-1:0] wr_issue_addr_o,
   output logic [AxlenWidth-1:0] wr_issue_axi_beat_o,
   output logic [1:0] wr_issue_frag_idx_o,
+  output logic wr_issue_full_candidate_o,
   input logic child_alloc_valid_i,
   output logic child_alloc_ready_o,
   input logic [$clog2(ParentEntries)-1:0] child_alloc_parent_idx_i,
@@ -242,6 +243,7 @@ module axi2chi_nocoh_txn_ctx #(
     wr_issue_addr_o = '0;
     wr_issue_axi_beat_o = '0;
     wr_issue_frag_idx_o = '0;
+    wr_issue_full_candidate_o = 1'b0;
     for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
       if (!rd_issue_valid_o && parent_q[idx].valid &&
           !parent_q[idx].is_write &&
@@ -276,8 +278,12 @@ module axi2chi_nocoh_txn_ctx #(
         if (parent_q[idx].next_issue_frag != 0) begin
           wr_issue_addr_o = (wr_issue_addr_o &
               ~AxiAddrWidth'(CacheLineBytes - 1)) +
-              AxiAddrWidth'(CacheLineBytes);
+            AxiAddrWidth'(CacheLineBytes);
         end
+        wr_issue_full_candidate_o = parent_q[idx].len == 0 &&
+            parent_q[idx].size == $clog2(CacheLineBytes) &&
+            (wr_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) == 0 &&
+            AxiDataWidth / 8 == CacheLineBytes;
       end
     end
     rd_issue_crosses_line = (rd_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) +

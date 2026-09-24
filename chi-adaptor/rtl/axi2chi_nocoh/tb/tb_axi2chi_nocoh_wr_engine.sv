@@ -23,11 +23,16 @@ module tb_axi2chi_nocoh_wr_engine;
   logic [$clog2(ParentEntries)-1:0] wr_issue_parent_idx_i;
   logic [AxiAddrWidth-1:0] wr_issue_addr_i;
   logic [7:0] wr_issue_axi_beat_i;
+  logic [1:0] wr_issue_frag_idx_i;
+  logic wr_issue_full_candidate_i;
+  logic [ParentEntries-1:0] wr_beat_present_vec_i;
+  logic [ParentEntries-1:0] wr_beat_full_vec_i;
   logic child_alloc_valid_o;
   logic child_alloc_ready_i;
   logic [$clog2(ParentEntries)-1:0] child_alloc_parent_idx_o;
   logic [AxiAddrWidth-1:0] child_alloc_addr_o;
   logic [7:0] child_alloc_axi_beat_o;
+  logic [1:0] child_alloc_frag_idx_o;
   logic [$clog2(ChildEntries)-1:0] child_alloc_idx_i;
   logic [ChiTxnidWidth-1:0] child_alloc_txnid_i;
   logic child_event_valid_o;
@@ -47,7 +52,10 @@ module tb_axi2chi_nocoh_wr_engine;
   logic wr_fragment_valid_i;
   logic [$clog2(ChildEntries)-1:0] wr_fragment_child_idx_i;
   logic [DatFlitWidth-1:0] wr_fragment_payload_i;
+  logic wr_fragment_last_i;
+  logic wr_fragment_error_i;
   logic wr_fragment_ready_o;
+  logic [ChildEntries-1:0] wr_wait_child_vec_o;
 
   axi2chi_nocoh_wr_engine #(
     .AxiAddrWidth(AxiAddrWidth),
@@ -57,7 +65,8 @@ module tb_axi2chi_nocoh_wr_engine;
     .RspFlitWidth(RspFlitWidth),
     .DatFlitWidth(DatFlitWidth),
     .ParentEntries(ParentEntries),
-    .ChildEntries(ChildEntries)
+    .ChildEntries(ChildEntries),
+    .EnableWriteNoSnpFull(1'b1)
   ) dut (.*);
 
   always #5 clk = ~clk;
@@ -67,6 +76,10 @@ module tb_axi2chi_nocoh_wr_engine;
     wr_issue_parent_idx_i = '0;
     wr_issue_addr_i = '0;
     wr_issue_axi_beat_i = '0;
+    wr_issue_frag_idx_i = '0;
+    wr_issue_full_candidate_i = 1'b0;
+    wr_beat_present_vec_i = '0;
+    wr_beat_full_vec_i = '0;
     child_alloc_ready_i = 1'b0;
     child_alloc_idx_i = '0;
     child_alloc_txnid_i = '0;
@@ -77,6 +90,8 @@ module tb_axi2chi_nocoh_wr_engine;
     wr_fragment_valid_i = 1'b0;
     wr_fragment_child_idx_i = '0;
     wr_fragment_payload_i = '0;
+    wr_fragment_last_i = 1'b1;
+    wr_fragment_error_i = 1'b0;
 
     #1;
     `CHECK(!wr_issue_ready_o);
@@ -167,6 +182,9 @@ module tb_axi2chi_nocoh_wr_engine;
     // CompDBIDResp permits the data transfer and already carries completion.
     wr_issue_parent_idx_i = 2'd0;
     wr_issue_addr_i = 64'hcc00_0020;
+    wr_issue_full_candidate_i = 1'b1;
+    wr_beat_present_vec_i[0] = 1'b1;
+    wr_beat_full_vec_i[0] = 1'b1;
     wr_issue_valid_i = 1'b1;
     @(posedge clk);
 
@@ -184,6 +202,7 @@ module tb_axi2chi_nocoh_wr_engine;
     txreq_ready_i = 1'b1;
     #1;
     `CHECK(txreq_valid_o);
+    `CHECK(txreq_payload_o[6:0] == 7'h19);
     @(posedge clk);
 
     @(negedge clk);
@@ -219,7 +238,7 @@ module tb_axi2chi_nocoh_wr_engine;
     #1;
     `CHECK(child_event_valid_o);
     `CHECK(child_event_idx_o == 2'd1);
-    `CHECK(child_event_type_o == 3'd3);
+    `CHECK(child_event_type_o == 3'd5);
     `CHECK(child_event_dbid_o == 4'hd);
     $display("PASS: write engine DBIDResp and CompDBIDResp flows");
     $finish;

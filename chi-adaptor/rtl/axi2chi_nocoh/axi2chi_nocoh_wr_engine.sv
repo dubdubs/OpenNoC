@@ -21,6 +21,9 @@ module axi2chi_nocoh_wr_engine #(
   input logic [AxiAddrWidth-1:0] wr_issue_addr_i,
   input logic [7:0] wr_issue_axi_beat_i,
   input logic [1:0] wr_issue_frag_idx_i,
+  input logic wr_issue_full_candidate_i,
+  input logic [ParentEntries-1:0] wr_beat_present_vec_i,
+  input logic [ParentEntries-1:0] wr_beat_full_vec_i,
   output logic child_alloc_valid_o,
   input logic child_alloc_ready_i,
   output logic [$clog2(ParentEntries)-1:0] child_alloc_parent_idx_o,
@@ -71,6 +74,7 @@ module axi2chi_nocoh_wr_engine #(
   logic [ChiTxnidWidth-1:0] txnid_q [ChildEntries];
   logic [ChiDbidWidth-1:0] dbid_q [ChildEntries];
   logic is_full_q [ChildEntries];
+  logic full_candidate_q [ChildEntries];
   logic [AxiAddrWidth-1:0] addr_q [ChildEntries];
   logic [7:0] axi_beat_q [ChildEntries];
   logic [1:0] frag_idx_q [ChildEntries];
@@ -105,6 +109,7 @@ module axi2chi_nocoh_wr_engine #(
   logic comp_fire;
   logic dbid_fire_q;
   logic [ChildIndexWidth-1:0] dbid_lane_q;
+  logic txreq_is_full;
 
   always_comb begin
     issue_lane_idx = '0;
@@ -126,6 +131,8 @@ module axi2chi_nocoh_wr_engine #(
     wr_wait_child_vec_o = '0;
     rxrsp_txnid = rxrsp_payload_i[8 +: ChiTxnidWidth];
     rxrsp_opcode = rxrsp_payload_i[3:0];
+    txreq_is_full = EnableWriteNoSnpFull && full_candidate_q[txreq_lane_idx] &&
+        wr_beat_full_vec_i[parent_q[txreq_lane_idx]];
     for (int unsigned idx = 0; idx < ChildEntries; idx++) begin
       if (state_q[idx] == kWrIdle && !issue_lane_found) begin
         issue_lane_idx = ChildIndexWidth'(idx);
@@ -135,7 +142,9 @@ module axi2chi_nocoh_wr_engine #(
         alloc_lane_idx = ChildIndexWidth'(idx);
         alloc_lane_found = 1'b1;
       end
-      if (state_q[idx] == kWrIssueReq && !txreq_lane_found) begin
+      if (state_q[idx] == kWrIssueReq &&
+          (!full_candidate_q[idx] || wr_beat_present_vec_i[parent_q[idx]]) &&
+          !txreq_lane_found) begin
         txreq_lane_idx = ChildIndexWidth'(idx);
         txreq_lane_found = 1'b1;
       end
@@ -192,7 +201,7 @@ module axi2chi_nocoh_wr_engine #(
       child_alloc_valid_o = alloc_lane_found;
       if (txreq_lane_found) begin
         txreq_valid_o = 1'b1;
-        txreq_payload_o[6:0] = is_full_q[txreq_lane_idx] ? 7'h19 : 7'h18;
+        txreq_payload_o[6:0] = txreq_is_full ? 7'h19 : 7'h18;
         txreq_payload_o[16 +: ChiTxnidWidth] = txnid_q[txreq_lane_idx];
         txreq_payload_o[32 +: AxiAddrWidth] = addr_q[txreq_lane_idx];
       end
@@ -232,6 +241,7 @@ module axi2chi_nocoh_wr_engine #(
         // Those fields are not present at this interface yet, so a write is
         // conservatively encoded as Ptl even when the feature is enabled.
         is_full_q[idx] <= 1'b0;
+        full_candidate_q[idx] <= 1'b0;
         addr_q[idx] <= '0;
         axi_beat_q[idx] <= '0;
         frag_idx_q[idx] <= '0;
@@ -253,6 +263,7 @@ module axi2chi_nocoh_wr_engine #(
         axi_beat_q[issue_lane_idx] <= wr_issue_axi_beat_i;
         frag_idx_q[issue_lane_idx] <= wr_issue_frag_idx_i;
         is_full_q[issue_lane_idx] <= 1'b0;
+        full_candidate_q[issue_lane_idx] <= wr_issue_full_candidate_i;
         completion_seen_q[issue_lane_idx] <= 1'b0;
         state_q[issue_lane_idx] <= kWrAlloc;
       end
@@ -264,6 +275,7 @@ module axi2chi_nocoh_wr_engine #(
       end
 
       if (txreq_fire) begin
+        is_full_q[txreq_lane_idx] <= txreq_is_full;
         state_q[txreq_lane_idx] <= kWrWaitDbid;
       end
 

@@ -28,6 +28,8 @@ module axi2chi_nocoh_wr_data #(
   output logic [DataIdWidth-1:0] txdat_fragment_dataid_o,
   output logic txdat_fragment_last_o,
   output logic txdat_fragment_error_o,
+  output logic [ParentEntries-1:0] wr_beat_present_vec_o,
+  output logic [ParentEntries-1:0] wr_beat_full_vec_o,
   output logic [ChiDataWidth-1:0] txdat_fragment_data_o,
   output logic [ChiDataWidth / 8-1:0] txdat_fragment_be_o
 );
@@ -64,6 +66,10 @@ module axi2chi_nocoh_wr_data #(
     // index, so retain the beat independently of when CHI child allocation
     // supplies the matching fragment binding.
     wr_beat_ready_o = !beat_valid_q[wr_beat_parent_idx_i];
+    wr_beat_present_vec_o = beat_valid_q;
+    for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
+      wr_beat_full_vec_o[idx] = beat_valid_q[idx] && &beat_strb_q[idx];
+    end
     child_bind_ready_o = !bind_valid_q[child_bind_parent_idx_i];
     segment_byte_count = segment_remaining_q[selected_idx] > ChiBytes ?
         $clog2(AxiDataWidth / 8 + 1)'(ChiBytes) : segment_remaining_q[selected_idx];
