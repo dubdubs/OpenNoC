@@ -82,6 +82,7 @@ module axi2chi_nocoh_slave #(
     logic [ParentIndexWidth-1:0] parent_idx;
     logic [AxiIdWidth-1:0] axi_id;
     logic [AxlenWidth-1:0] len;
+    logic [AxsizeWidth-1:0] size;
   } aw_order_entry_t;
 
   aw_order_entry_t aw_order_q [ParentEntries];
@@ -93,6 +94,7 @@ module axi2chi_nocoh_slave #(
   logic aw_order_pop;
   logic wr_beat_fire;
   logic active_w_expected_last;
+  logic [AxiDataWidth / 8-1:0] active_w_legal_strb;
   logic local_rd_valid_q;
   logic [AxiIdWidth-1:0] local_rd_id_q;
   logic [AxlenWidth-1:0] local_rd_len_q;
@@ -145,6 +147,12 @@ module axi2chi_nocoh_slave #(
 
     active_w_expected_last =
         active_w_beat_count_q == aw_order_q[aw_order_rd_ptr_q].len;
+    active_w_legal_strb = '0;
+    for (int unsigned byte_idx = 0; byte_idx < AxiDataWidth / 8; byte_idx++) begin
+      if (byte_idx < (1 << aw_order_q[aw_order_rd_ptr_q].size)) begin
+        active_w_legal_strb[byte_idx] = 1'b1;
+      end
+    end
     local_wrap_read = s_axi_arburst == 2'b10;
     local_wrap_write = s_axi_awburst == 2'b10;
 
@@ -166,7 +174,8 @@ module axi2chi_nocoh_slave #(
           wr_beat_data_o = s_axi_wdata;
           wr_beat_strb_o = s_axi_wstrb;
           wr_beat_last_o = s_axi_wlast;
-          wr_beat_error_o = s_axi_wlast != active_w_expected_last;
+          wr_beat_error_o = (s_axi_wlast != active_w_expected_last) ||
+              |(s_axi_wstrb & ~active_w_legal_strb);
         end
       end
 
@@ -223,6 +232,7 @@ module axi2chi_nocoh_slave #(
         aw_order_q[aw_order_wr_ptr_q].parent_idx <= wr_admit_parent_idx_i;
         aw_order_q[aw_order_wr_ptr_q].axi_id <= s_axi_awid;
         aw_order_q[aw_order_wr_ptr_q].len <= s_axi_awlen;
+        aw_order_q[aw_order_wr_ptr_q].size <= s_axi_awsize;
         if (aw_order_wr_ptr_q == ParentEntries - 1) begin
           aw_order_wr_ptr_q <= '0;
         end else begin
