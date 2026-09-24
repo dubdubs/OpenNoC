@@ -189,7 +189,8 @@ module tb_axi2chi_nocoh_top_write;
     @(negedge clk);
 
     rsp_payload = '0;
-    // CompDBIDResp grants the DBID and completes the write before TXDAT.
+    // An early CompDBIDResp still supplies DBID for TXDAT, but the AXI write
+    // completes with SLVERR because completion preceded the data transfer.
     rsp_payload[3:0] = 4'h2;
     rsp_payload[24 +: ChiDbidWidth] = 8'h5a;
     rsp_payload[36 +: 2] = 2'b00;
@@ -230,7 +231,7 @@ module tb_axi2chi_nocoh_top_write;
     #1;
     `CHECK(s_axi_bvalid);
     `CHECK(s_axi_bid == 2'd2);
-    `CHECK(s_axi_bresp == 2'b00);
+    `CHECK(s_axi_bresp == 2'b10);
     s_axi_bready = 1'b1;
     @(posedge clk);
     @(negedge clk);

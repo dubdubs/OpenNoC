@@ -46,8 +46,8 @@ module axi2chi_nocoh_wr_engine #(
   input logic wr_fragment_valid_i,
   input logic [$clog2(ChildEntries)-1:0] wr_fragment_child_idx_i,
   input logic [DatFlitWidth-1:0] wr_fragment_payload_i,
-  output logic wr_fragment_ready_o
-  ,output logic [ChildEntries-1:0] wr_wait_child_vec_o
+  output logic wr_fragment_ready_o,
+  output logic [ChildEntries-1:0] wr_wait_child_vec_o
 );
 
   localparam int unsigned ChildIndexWidth = $clog2(ChildEntries);
@@ -261,7 +261,11 @@ module axi2chi_nocoh_wr_engine #(
 
       if (dbid_fire) begin
         dbid_q[dbid_lane_idx] <= rxrsp_payload_i[24 +: ChiDbidWidth];
-        resp_q[dbid_lane_idx] <= rxrsp_payload_i[36 +: 2];
+        // A CompDBIDResp completes before this child has emitted TXDAT.
+        // Preserve the DBID so the data path can drain, but report a protocol
+        // error when the child becomes AXI-visible after TXDAT fires.
+        resp_q[dbid_lane_idx] <= rxrsp_payload_i[36 +: 2] |
+            (rxrsp_opcode == 4'h2 ? 2'b10 : 2'b00);
         completion_seen_q[dbid_lane_idx] <= rxrsp_opcode == 4'h2;
         state_q[dbid_lane_idx] <= kWrWaitW;
       end
