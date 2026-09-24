@@ -247,7 +247,7 @@ module axi2chi_nocoh_rd_data #(
               assembly_q[fragment_parent_idx_i].valid_byte_mask | mapped_be;
           assembly_q[fragment_parent_idx_i].resp <=
               assembly_q[fragment_parent_idx_i].resp |
-              (fragment_resp_i[1] ? 2'b10 : 2'b00);
+              ((fragment_resp_i[1] || child_missing_data) ? 2'b10 : 2'b00);
         end
       end
     end
