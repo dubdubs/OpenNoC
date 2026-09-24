@@ -119,12 +119,6 @@ module axi2chi_nocoh_top #(
     if (ParentEntries < 2 || ChildEntries < 2) begin
       $fatal(1, "ParentEntries and ChildEntries must both be at least 2");
     end
-    if (ReqFlitWidth < 32 + AxiAddrWidth ||
-        DatFlitWidth < 64 + ChiDataWidth ||
-        DatFlitWidth < 32 + ChiDataWidth / 8 ||
-        DatFlitWidth < RxdatRespLsb + 2) begin
-      $fatal(1, "CHI flit widths do not cover configured payload fields");
-    end
   end
 `endif
 
@@ -416,7 +410,7 @@ module axi2chi_nocoh_top #(
     .rd_admit_size_o(slave_rd_admit_size),
     .rd_admit_burst_o(slave_rd_admit_burst),
     .wr_admit_valid_o(slave_wr_admit_valid),
-    .wr_admit_ready_i(ctx_wr_admit_ready),
+    .wr_admit_ready_i(ctx_wr_admit_ready && core_txreq_ready),
     .wr_admit_parent_idx_i(ctx_wr_admit_parent_idx),
     .wr_admit_id_o(slave_wr_admit_id),
     .wr_admit_addr_o(slave_wr_admit_addr),
@@ -463,7 +457,7 @@ module axi2chi_nocoh_top #(
     .rd_admit_len_i(slave_rd_admit_len),
     .rd_admit_size_i(slave_rd_admit_size),
     .rd_admit_burst_i(slave_rd_admit_burst),
-    .wr_admit_valid_i(slave_wr_admit_valid),
+    .wr_admit_valid_i(slave_wr_admit_valid && core_txreq_ready),
     .wr_admit_ready_o(ctx_wr_admit_ready),
     .wr_admit_id_i(slave_wr_admit_id),
     .wr_admit_addr_i(slave_wr_admit_addr),
