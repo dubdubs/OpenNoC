@@ -196,7 +196,11 @@ module axi2chi_nocoh_wr_engine #(
         txreq_payload_o[16 +: ChiTxnidWidth] = txnid_q[txreq_lane_idx];
         txreq_payload_o[32 +: AxiAddrWidth] = addr_q[txreq_lane_idx];
       end
-      rxrsp_ready_o = dbid_lane_found || comp_lane_found;
+      // The RXRSP FIFO is shared.  An unknown TxnID or unsupported opcode
+      // must be consumed at this boundary rather than permanently blocking
+      // completions for unrelated children.  Only dbid_fire/comp_fire below
+      // may mutate a matching child state.
+      rxrsp_ready_o = 1'b1;
       wr_fragment_ready_o = w_lane_found;
       if (txdat_lane_found) begin
         txdat_valid_o = 1'b1;

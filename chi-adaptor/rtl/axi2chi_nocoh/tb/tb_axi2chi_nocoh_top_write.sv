@@ -168,6 +168,13 @@ module tb_axi2chi_nocoh_top_write;
     @(posedge clk);
     @(negedge clk);
 
+    // An unrelated completion must not block the shared RXRSP FIFO or alter
+    // the following valid AXI write transaction.
+    rsp_payload = '0;
+    rsp_payload[3:0] = 4'h3;
+    rsp_payload[8 +: ChiTxnidWidth] = {ChiTxnidWidth{1'b1}};
+    send_rxrsp(rsp_payload);
+
     s_axi_awvalid = 1'b1;
     #1;
     `CHECK(s_axi_awready);
