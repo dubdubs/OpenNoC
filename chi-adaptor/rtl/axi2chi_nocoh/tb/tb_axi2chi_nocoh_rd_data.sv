@@ -96,7 +96,7 @@ module tb_axi2chi_nocoh_rd_data;
     fragment_parent_idx_i = 3'd4;
     fragment_axi_id_i = 3'd6;
     fragment_data_i = 128'hffff_eeee_dddd_cccc_0123_4567_89ab_cdef;
-    fragment_be_i = 16'h00ff;
+    fragment_be_i = 16'h00fe;
     fragment_resp_i = 2'b00;
     @(posedge clk);
 
@@ -115,7 +115,7 @@ module tb_axi2chi_nocoh_rd_data;
     `CHECK(rd_rsp_parent_idx_o == 3'd4);
     `CHECK(rd_rsp_id_o == 3'd6);
     `CHECK(rd_rsp_data_o == 64'h0123_4567_89ab_cdef);
-    `CHECK(rd_rsp_resp_o == 2'b00);
+    `CHECK(rd_rsp_resp_o == 2'b10);
     `CHECK(rd_rsp_last_o);
 
     rd_rsp_ready_i = 1'b1;

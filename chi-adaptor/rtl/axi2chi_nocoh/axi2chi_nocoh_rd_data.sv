@@ -84,6 +84,11 @@ module axi2chi_nocoh_rd_data #(
   logic [$clog2(AxiDataWidth / 8 + 1)-1:0] mapped_axi_byte_offset;
   logic [$clog2(AxiDataWidth / 8 + 1)-1:0] mapped_byte_count;
   logic [$clog2(ChiBytes + 1)-1:0] mapped_chi_byte_offset;
+  logic [AxiDataWidth / 8-1:0] child_valid_mask_q [ParentEntries];
+  logic [AxiDataWidth / 8-1:0] child_valid_mask_next;
+  logic [AxiDataWidth / 8-1:0] fragment_required_be;
+  logic child_missing_data;
+  logic child_data_error_q [ParentEntries];
 
   axi2chi_nocoh_rd_byte_map #(
     .AxiDataWidth(AxiDataWidth), .ChiDataWidth(ChiDataWidth),
@@ -106,6 +111,7 @@ module axi2chi_nocoh_rd_data #(
     mapped_axi_byte_offset = fragment_axi_byte_offset_i;
     mapped_byte_count = '0;
     mapped_chi_byte_offset = '0;
+    fragment_required_be = '0;
     if (fragment_byte_count_i != 0) begin
       // Extend the line offset before arithmetic.  A fragment ending at the
       // cache-line boundary must not wrap in the LineOffsetWidth domain.
@@ -141,6 +147,15 @@ module axi2chi_nocoh_rd_data #(
     end
     received_segment_mask_next = received_segment_mask_q[fragment_parent_idx_i] |
         current_segment_mask;
+    for (int unsigned byte_idx = 0; byte_idx < AxiDataWidth / 8; byte_idx++) begin
+      if (byte_idx >= mapped_axi_byte_offset &&
+          byte_idx < mapped_axi_byte_offset + mapped_byte_count) begin
+        fragment_required_be[byte_idx] = 1'b1;
+      end
+    end
+    child_valid_mask_next = child_valid_mask_q[fragment_parent_idx_i] | mapped_be;
+    child_missing_data =
+        (child_valid_mask_next & fragment_required_be) != fragment_required_be;
     child_segments_complete =
         (received_segment_mask_next & required_segment_mask) == required_segment_mask &&
         required_segment_mask != '0;
@@ -180,6 +195,8 @@ module axi2chi_nocoh_rd_data #(
         assembly_q[idx] <= '0;
         response_q[idx] <= '0;
         received_segment_mask_q[idx] <= '0;
+        child_valid_mask_q[idx] <= '0;
+        child_data_error_q[idx] <= 1'b0;
       end
     end else begin
       child_complete_valid_q <= 1'b0;
@@ -188,12 +205,18 @@ module axi2chi_nocoh_rd_data #(
       end
       if (fragment_fire) begin
         received_segment_mask_q[fragment_parent_idx_i] <= received_segment_mask_next;
+        child_valid_mask_q[fragment_parent_idx_i] <= child_valid_mask_next;
+        child_data_error_q[fragment_parent_idx_i] <=
+            child_data_error_q[fragment_parent_idx_i] || child_missing_data;
         if (child_segments_complete) begin
           child_complete_valid_q <= 1'b1;
           child_complete_idx_q <= fragment_child_idx_i;
           child_complete_resp_q <= assembly_q[fragment_parent_idx_i].resp |
-              (fragment_resp_i[1] ? 2'b10 : 2'b00);
+              ((fragment_resp_i[1] || child_missing_data ||
+              child_data_error_q[fragment_parent_idx_i]) ? 2'b10 : 2'b00);
           received_segment_mask_q[fragment_parent_idx_i] <= '0;
+          child_valid_mask_q[fragment_parent_idx_i] <= '0;
+          child_data_error_q[fragment_parent_idx_i] <= 1'b0;
         end
         if (child_segments_complete && fragment_last_fragment_i &&
             fragment_idx_i == 0) begin
@@ -201,7 +224,7 @@ module axi2chi_nocoh_rd_data #(
           response_q[fragment_parent_idx_i].axi_id <= fragment_axi_id_i;
           response_q[fragment_parent_idx_i].data <= mapped_data;
           response_q[fragment_parent_idx_i].resp <=
-              fragment_resp_i[1] ? 2'b10 : 2'b00;
+              (fragment_resp_i[1] || child_missing_data) ? 2'b10 : 2'b00;
           response_q[fragment_parent_idx_i].last <= fragment_last_i;
           response_q[fragment_parent_idx_i].child_idx <= fragment_child_idx_i;
           response_q[fragment_parent_idx_i].axi_beat <= fragment_axi_beat_i;
@@ -212,7 +235,7 @@ module axi2chi_nocoh_rd_data #(
               assembly_q[fragment_parent_idx_i].data | mapped_data;
           response_q[fragment_parent_idx_i].resp <=
               assembly_q[fragment_parent_idx_i].resp |
-              (fragment_resp_i[1] ? 2'b10 : 2'b00);
+              ((fragment_resp_i[1] || child_missing_data) ? 2'b10 : 2'b00);
           response_q[fragment_parent_idx_i].last <= fragment_last_i;
           response_q[fragment_parent_idx_i].child_idx <= fragment_child_idx_i;
           response_q[fragment_parent_idx_i].axi_beat <= fragment_axi_beat_i;
