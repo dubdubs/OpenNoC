@@ -83,6 +83,35 @@ module axi2chi_nocoh_top #(
   localparam int unsigned RxdatDataIdLsb = 24;
   localparam int unsigned RxdatRespLsb = RxdatDataIdLsb + DataIdWidth;
 
+`ifndef SYNTHESIS
+  // Elaboration-time profile checks.  These guard widths used by the
+  // fragment scheduler and flit field slices; no runtime datapath state is
+  // created by this block.
+  initial begin
+    if (AxiDataWidth == 0 || AxiDataWidth % 8 != 0) begin
+      $fatal(1, "AxiDataWidth must be a non-zero multiple of 8");
+    end
+    if (ChiDataWidth == 0 || ChiDataWidth % 8 != 0) begin
+      $fatal(1, "ChiDataWidth must be a non-zero multiple of 8");
+    end
+    if (CacheLineBytes == 0 || (CacheLineBytes & (CacheLineBytes - 1)) != 0) begin
+      $fatal(1, "CacheLineBytes must be a power of two");
+    end
+    if (CacheLineBytes % (ChiDataWidth / 8) != 0) begin
+      $fatal(1, "CacheLineBytes must be an integer number of CHI data segments");
+    end
+    if (ParentEntries < 2 || ChildEntries < 2) begin
+      $fatal(1, "ParentEntries and ChildEntries must both be at least 2");
+    end
+    if (ReqFlitWidth < 32 + AxiAddrWidth ||
+        DatFlitWidth < 64 + ChiDataWidth ||
+        DatFlitWidth < 32 + ChiDataWidth / 8 ||
+        DatFlitWidth < RxdatRespLsb + 2) begin
+      $fatal(1, "CHI flit widths do not cover configured payload fields");
+    end
+  end
+`endif
+
   // Canonical internal boundaries are declared here for the later integration step.
   logic rst;
   logic core_txreq_valid;
