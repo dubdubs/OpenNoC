@@ -98,8 +98,23 @@ module axi2chi_nocoh_top #(
     if (CacheLineBytes == 0 || (CacheLineBytes & (CacheLineBytes - 1)) != 0) begin
       $fatal(1, "CacheLineBytes must be a power of two");
     end
+    if (CacheLineBytes != 32 && CacheLineBytes != 64 &&
+        CacheLineBytes != 128) begin
+      $fatal(1, "CacheLineBytes must be 32, 64, or 128");
+    end
+    if (CacheLineBytes % (AxiDataWidth / 8) != 0) begin
+      $fatal(1, "CacheLineBytes must be an integer number of AXI beats");
+    end
     if (CacheLineBytes % (ChiDataWidth / 8) != 0) begin
       $fatal(1, "CacheLineBytes must be an integer number of CHI data segments");
+    end
+    if (!((AxiDataWidth >= ChiDataWidth && AxiDataWidth % ChiDataWidth == 0) ||
+          (ChiDataWidth >= AxiDataWidth && ChiDataWidth % AxiDataWidth == 0))) begin
+      $fatal(1, "AXI and CHI data widths must be equal or integer multiples");
+    end
+    if (DataIdWidth < ((CacheLineBytes / (ChiDataWidth / 8)) > 1 ?
+        $clog2(CacheLineBytes / (ChiDataWidth / 8)) : 1)) begin
+      $fatal(1, "DataIdWidth cannot represent all CHI data segments in a line");
     end
     if (ParentEntries < 2 || ChildEntries < 2) begin
       $fatal(1, "ParentEntries and ChildEntries must both be at least 2");
