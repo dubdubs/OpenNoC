@@ -43,7 +43,9 @@ module axi2chi_nocoh_rd_engine #(
   output logic rd_fragment_valid_o,
   output logic [$clog2(ChildEntries)-1:0] rd_fragment_child_idx_o,
   output logic [DatFlitWidth-1:0] rd_fragment_payload_o,
-  input logic rd_fragment_ready_i
+  input logic rd_fragment_ready_i,
+  input logic rd_child_complete_valid_i,
+  input logic [$clog2(ChildEntries)-1:0] rd_child_complete_idx_i
 );
 
   localparam int unsigned ChildIndexWidth = $clog2(ChildEntries);
@@ -152,10 +154,13 @@ module axi2chi_nocoh_rd_engine #(
         txreq_payload_o[16 +: ChiTxnidWidth] = txnid_q[txreq_lane_idx];
         txreq_payload_o[32 +: AxiAddrWidth] = addr_q[txreq_lane_idx];
       end
-      rxdat_ready_o = rxdat_lane_found;
+      // Consume an unknown RXDAT instead of deadlocking the shared receive
+      // FIFO.  Only a matching wait-data lane may update child state below.
+      // A registered rd_data completion owns the child lifecycle, so no
+      // RXDAT is consumed in the completion cycle.
+      rxdat_ready_o = !rd_child_complete_valid_i;
       rd_fragment_valid_o = fragment_lane_found;
-      child_event_valid_o = event_lane_found;
-      child_event_type_o = 3'd4;
+      child_event_valid_o = 1'b0;
     end
 
     issue_fire = rd_issue_valid_i && rd_issue_ready_o;
@@ -196,17 +201,25 @@ module axi2chi_nocoh_rd_engine #(
         state_q[txreq_lane_idx] <= kRdWaitDat;
       end
 
-      if (rxdat_fire) begin
+      if (rxdat_fire && rxdat_lane_found) begin
         rxdat_payload_q[rxdat_lane_idx] <= rxdat_payload_i;
         state_q[rxdat_lane_idx] <= kRdCommitData;
       end
 
       if (fragment_fire) begin
-        state_q[fragment_lane_idx] <= kRdWaitRetire;
+        // One child may require several RXDAT DataID segments.  Return to
+        // wait-data after each segment; rd_data later reports final assembly.
+        state_q[fragment_lane_idx] <= kRdWaitDat;
       end
 
-      if (child_event_valid_o) begin
-        state_q[event_lane_idx] <= kRdIdle;
+      if (rd_child_complete_valid_i) begin
+        for (int unsigned idx = 0; idx < ChildEntries; idx++) begin
+          if ((state_q[idx] == kRdWaitDat ||
+               state_q[idx] == kRdWaitRetire) &&
+              child_q[idx] == rd_child_complete_idx_i) begin
+            state_q[idx] <= kRdIdle;
+          end
+        end
       end
     end
   end

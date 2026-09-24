@@ -13,6 +13,9 @@ module axi2chi_nocoh_top #(
   parameter int unsigned ChiDbidWidth = 12,
   parameter int unsigned ChiDataWidth = 256,
   parameter int unsigned CacheLineBytes = 64,
+  parameter int unsigned DataIdWidth =
+      ((CacheLineBytes / (ChiDataWidth / 8)) > 1) ?
+          $clog2(CacheLineBytes / (ChiDataWidth / 8)) : 1,
   parameter int unsigned ParentEntries = 16,
   parameter int unsigned ChildEntries = 16,
   parameter int unsigned ReqFlitWidth = 131,
@@ -77,6 +80,8 @@ module axi2chi_nocoh_top #(
   localparam int unsigned ChiBeWidth = ChiDataWidth / 8;
   localparam int unsigned ParentIndexWidth = $clog2(ParentEntries);
   localparam int unsigned ChildIndexWidth = $clog2(ChildEntries);
+  localparam int unsigned RxdatDataIdLsb = 24;
+  localparam int unsigned RxdatRespLsb = RxdatDataIdLsb + DataIdWidth;
 
   // Canonical internal boundaries are declared here for the later integration step.
   logic rst;
@@ -141,6 +146,9 @@ module axi2chi_nocoh_top #(
   logic rd_child_event_valid;
   logic [ChildIndexWidth-1:0] rd_child_event_idx;
   logic [2:0] rd_child_event_type;
+  logic rd_data_child_complete_valid;
+  logic [ChildIndexWidth-1:0] rd_data_child_complete_idx;
+  logic [1:0] rd_data_child_complete_resp;
   logic rd_fragment_valid;
   logic rd_fragment_ready;
   logic [ChildIndexWidth-1:0] rd_fragment_child_idx;
@@ -178,6 +186,8 @@ module axi2chi_nocoh_top #(
   logic [ChildEntries-1:0] wr_wait_child_vec;
   logic wr_beat_ready;
   logic [ChildIndexWidth-1:0] wr_data_fragment_child_idx;
+  logic [DataIdWidth-1:0] wr_data_fragment_dataid;
+  logic wr_data_fragment_last;
   logic [ChiDataWidth-1:0] wr_data_fragment_data;
   logic [ChiBeWidth-1:0] wr_data_fragment_be;
   logic [DatFlitWidth-1:0] wr_fragment_payload;
@@ -263,6 +273,7 @@ module axi2chi_nocoh_top #(
   // TxnID and expected response opcode can accept it.
   assign core_rxrsp_ready = rd_core_rxrsp_ready || wr_core_rxrsp_ready;
   assign wr_fragment_payload = '0 |
+      (DatFlitWidth'(wr_data_fragment_dataid) << 36) |
       (DatFlitWidth'(wr_data_fragment_be) << 64) |
       (DatFlitWidth'(wr_data_fragment_data) << 128);
   assign child_alloc_valid = rd_child_alloc_valid || wr_child_alloc_valid;
@@ -279,13 +290,14 @@ module axi2chi_nocoh_top #(
   assign wr_child_alloc_idx = child_alloc_idx;
   assign rd_child_alloc_txnid = child_alloc_txnid;
   assign wr_child_alloc_txnid = child_alloc_txnid;
-  assign child_event_valid = rd_child_event_valid || wr_child_event_valid;
+  assign child_event_valid = rd_data_child_complete_valid || wr_child_event_valid;
   assign child_event_idx =
-      rd_child_event_valid ? rd_child_event_idx : wr_child_event_idx;
+      rd_data_child_complete_valid ? rd_data_child_complete_idx : wr_child_event_idx;
   assign child_event_type =
-      rd_child_event_valid ? rd_child_event_type : wr_child_event_type;
-  assign child_event_dbid = rd_child_event_valid ? '0 : wr_child_event_dbid;
-  assign child_event_resp = rd_child_event_valid ? '0 : wr_child_event_resp;
+      rd_data_child_complete_valid ? 3'd4 : wr_child_event_type;
+  assign child_event_dbid = rd_data_child_complete_valid ? '0 : wr_child_event_dbid;
+  assign child_event_resp = rd_data_child_complete_valid ?
+      rd_data_child_complete_resp : wr_child_event_resp;
   assign parent_retire_valid =
       (rd_rsp_valid && rd_rsp_ready && rd_rsp_parent_valid && rd_rsp_last) ||
       (wr_rsp_valid && wr_rsp_ready);
@@ -513,7 +525,9 @@ module axi2chi_nocoh_top #(
     .rd_fragment_valid_o(rd_fragment_valid),
     .rd_fragment_child_idx_o(rd_fragment_child_idx),
     .rd_fragment_payload_o(rd_fragment_payload),
-    .rd_fragment_ready_i(rd_fragment_ready)
+    .rd_fragment_ready_i(rd_fragment_ready),
+    .rd_child_complete_valid_i(rd_data_child_complete_valid),
+    .rd_child_complete_idx_i(rd_data_child_complete_idx)
   );
 
   axi2chi_nocoh_rd_data #(
@@ -523,7 +537,8 @@ module axi2chi_nocoh_top #(
     .ChiDataWidth(ChiDataWidth),
     .CacheLineBytes(CacheLineBytes),
     .ParentEntries(ParentEntries),
-    .ChildEntries(ChildEntries)
+    .ChildEntries(ChildEntries),
+    .DataIdWidth(DataIdWidth)
   ) rd_data (
     .clk(clk),
     .rst(rst),
@@ -536,13 +551,17 @@ module axi2chi_nocoh_top #(
     .fragment_axi_beat_i(child_lookup_axi_beat),
     .fragment_data_i(rd_fragment_payload[64 +: ChiDataWidth]),
     .fragment_be_i(rd_fragment_payload[32 +: ChiBeWidth]),
-    .fragment_resp_i(rd_fragment_payload[26 +: 2]),
+    .fragment_dataid_i(rd_fragment_payload[24 +: DataIdWidth]),
+    .fragment_resp_i(rd_fragment_payload[RxdatRespLsb +: 2]),
     .fragment_last_i(child_lookup_last),
     .fragment_last_fragment_i(child_lookup_last_fragment),
     .fragment_idx_i(child_lookup_frag_idx),
     .fragment_axi_byte_offset_i(child_lookup_axi_byte_offset),
     .fragment_line_byte_offset_i(child_lookup_line_byte_offset),
     .fragment_byte_count_i(child_lookup_fragment_byte_count),
+    .child_complete_valid_o(rd_data_child_complete_valid),
+    .child_complete_idx_o(rd_data_child_complete_idx),
+    .child_complete_resp_o(rd_data_child_complete_resp),
     .rd_rsp_parent_valid_o(rd_rsp_parent_valid),
     .rd_rsp_parent_idx_o(rd_rsp_parent_idx),
     .rd_rsp_child_idx_o(rd_rsp_child_idx),
@@ -561,7 +580,8 @@ module axi2chi_nocoh_top #(
     .ChiDataWidth(ChiDataWidth),
     .CacheLineBytes(CacheLineBytes),
     .ParentEntries(ParentEntries),
-    .ChildEntries(ChildEntries)
+    .ChildEntries(ChildEntries),
+    .DataIdWidth(DataIdWidth)
   ) wr_data (
     .clk(clk),
     .rst(rst),
@@ -583,6 +603,8 @@ module axi2chi_nocoh_top #(
     .txdat_fragment_valid_o(wr_data_fragment_valid),
     .txdat_fragment_ready_i(wr_data_fragment_ready),
     .txdat_fragment_child_idx_o(wr_data_fragment_child_idx),
+    .txdat_fragment_dataid_o(wr_data_fragment_dataid),
+    .txdat_fragment_last_o(wr_data_fragment_last),
     .txdat_fragment_data_o(wr_data_fragment_data),
     .txdat_fragment_be_o(wr_data_fragment_be)
   );
@@ -630,6 +652,7 @@ module axi2chi_nocoh_top #(
     .wr_fragment_valid_i(wr_data_fragment_valid),
     .wr_fragment_child_idx_i(wr_data_fragment_child_idx),
     .wr_fragment_payload_i(wr_fragment_payload),
+    .wr_fragment_last_i(wr_data_fragment_last),
     .wr_fragment_ready_o(wr_data_fragment_ready),
     .wr_wait_child_vec_o(wr_wait_child_vec)
   );

@@ -3,7 +3,10 @@
 module axi2chi_nocoh_wr_data #(
   parameter int unsigned AxiDataWidth = 128, parameter int unsigned ChiDataWidth = 256,
   parameter int unsigned CacheLineBytes = 64, parameter int unsigned ParentEntries = 16,
-  parameter int unsigned ChildEntries = 16
+  parameter int unsigned ChildEntries = 16,
+  parameter int unsigned DataIdWidth =
+      ((CacheLineBytes / (ChiDataWidth / 8)) > 1) ?
+          $clog2(CacheLineBytes / (ChiDataWidth / 8)) : 1
 ) (
   input logic clk, input logic rst, input logic wr_beat_valid_i,
   output logic wr_beat_ready_o,
@@ -21,10 +24,13 @@ module axi2chi_nocoh_wr_data #(
   input logic [$clog2(AxiDataWidth / 8 + 1)-1:0] child_bind_fragment_byte_count_i,
   output logic txdat_fragment_valid_o, input logic txdat_fragment_ready_i,
   output logic [$clog2(ChildEntries)-1:0] txdat_fragment_child_idx_o,
+  output logic [DataIdWidth-1:0] txdat_fragment_dataid_o,
+  output logic txdat_fragment_last_o,
   output logic [ChiDataWidth-1:0] txdat_fragment_data_o,
   output logic [ChiDataWidth / 8-1:0] txdat_fragment_be_o
 );
   localparam int unsigned ParentIndexWidth = $clog2(ParentEntries);
+  localparam int unsigned ChiBytes = ChiDataWidth / 8;
   logic [ParentEntries-1:0] beat_valid_q, bind_valid_q;
   logic [AxiDataWidth-1:0] beat_data_q [ParentEntries];
   logic [AxiDataWidth / 8-1:0] beat_strb_q [ParentEntries];
@@ -33,12 +39,15 @@ module axi2chi_nocoh_wr_data #(
   logic [$clog2(AxiDataWidth / 8 + 1)-1:0] bind_axi_offset_q [ParentEntries];
   logic [$clog2(CacheLineBytes)-1:0] bind_line_offset_q [ParentEntries];
   logic [$clog2(AxiDataWidth / 8 + 1)-1:0] bind_count_q [ParentEntries];
+  logic [$clog2(AxiDataWidth / 8 + 1)-1:0] segment_offset_q [ParentEntries];
+  logic [$clog2(AxiDataWidth / 8 + 1)-1:0] segment_remaining_q [ParentEntries];
   logic selected_found; logic [ParentIndexWidth-1:0] selected_idx;
   logic [ChiDataWidth-1:0] mapped_data; logic [ChiDataWidth / 8-1:0] mapped_be;
   logic wr_capture_fire, bind_capture_fire, fragment_fire;
+  logic [$clog2(AxiDataWidth / 8 + 1)-1:0] segment_byte_count;
   axi2chi_nocoh_wr_byte_map #(.AxiDataWidth(AxiDataWidth), .ChiDataWidth(ChiDataWidth), .CacheLineBytes(CacheLineBytes)) map (
     .axi_data_i(beat_data_q[selected_idx]), .axi_strb_i(beat_strb_q[selected_idx]),
-    .axi_byte_offset_i(bind_axi_offset_q[selected_idx]), .fragment_byte_count_i(bind_count_q[selected_idx]),
+    .axi_byte_offset_i(bind_axi_offset_q[selected_idx] + segment_offset_q[selected_idx]), .fragment_byte_count_i(segment_byte_count),
     .line_byte_offset_i(bind_line_offset_q[selected_idx]), .chi_data_o(mapped_data), .chi_be_o(mapped_be));
   always_comb begin
     selected_found = 1'b0; selected_idx = '0;
@@ -53,8 +62,13 @@ module axi2chi_nocoh_wr_data #(
     // supplies the matching fragment binding.
     wr_beat_ready_o = !beat_valid_q[wr_beat_parent_idx_i];
     child_bind_ready_o = !bind_valid_q[child_bind_parent_idx_i];
+    segment_byte_count = segment_remaining_q[selected_idx] > ChiBytes ?
+        $clog2(AxiDataWidth / 8 + 1)'(ChiBytes) : segment_remaining_q[selected_idx];
     txdat_fragment_valid_o = selected_found;
     txdat_fragment_child_idx_o = bind_child_q[selected_idx];
+    txdat_fragment_dataid_o =
+        DataIdWidth'((bind_line_offset_q[selected_idx] + segment_offset_q[selected_idx]) / ChiBytes);
+    txdat_fragment_last_o = segment_remaining_q[selected_idx] <= ChiBytes;
     txdat_fragment_data_o = mapped_data; txdat_fragment_be_o = mapped_be;
     wr_capture_fire = wr_beat_valid_i && wr_beat_ready_o;
     bind_capture_fire = child_bind_valid_i && child_bind_ready_o;
@@ -67,6 +81,7 @@ module axi2chi_nocoh_wr_data #(
         beat_data_q[idx] <= '0; beat_strb_q[idx] <= '0; bind_child_q[idx] <= '0;
         bind_last_q[idx] <= 1'b0; bind_axi_offset_q[idx] <= '0;
         bind_line_offset_q[idx] <= '0; bind_count_q[idx] <= '0;
+        segment_offset_q[idx] <= '0; segment_remaining_q[idx] <= '0;
       end
     end else begin
       if (bind_capture_fire) begin
@@ -76,6 +91,8 @@ module axi2chi_nocoh_wr_data #(
         bind_axi_offset_q[child_bind_parent_idx_i] <= child_bind_axi_byte_offset_i;
         bind_line_offset_q[child_bind_parent_idx_i] <= child_bind_line_byte_offset_i;
         bind_count_q[child_bind_parent_idx_i] <= child_bind_fragment_byte_count_i;
+        segment_offset_q[child_bind_parent_idx_i] <= '0;
+        segment_remaining_q[child_bind_parent_idx_i] <= child_bind_fragment_byte_count_i;
       end
       if (wr_capture_fire) begin
         beat_valid_q[wr_beat_parent_idx_i] <= 1'b1;
@@ -83,8 +100,13 @@ module axi2chi_nocoh_wr_data #(
         beat_strb_q[wr_beat_parent_idx_i] <= wr_beat_strb_i;
       end
       if (fragment_fire) begin
-        bind_valid_q[selected_idx] <= 1'b0;
-        if (bind_last_q[selected_idx]) beat_valid_q[selected_idx] <= 1'b0;
+        if (segment_remaining_q[selected_idx] > ChiBytes) begin
+          segment_offset_q[selected_idx] <= segment_offset_q[selected_idx] + ChiBytes;
+          segment_remaining_q[selected_idx] <= segment_remaining_q[selected_idx] - ChiBytes;
+        end else begin
+          bind_valid_q[selected_idx] <= 1'b0;
+          if (bind_last_q[selected_idx]) beat_valid_q[selected_idx] <= 1'b0;
+        end
       end
     end
   end

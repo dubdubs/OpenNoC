@@ -10,6 +10,7 @@ module tb_axi2chi_nocoh_rd_byte_map;
   logic [3:0] axi_byte_offset_i;
   logic [3:0] fragment_byte_count_i;
   logic [5:0] line_byte_offset_i;
+  logic [6:0] chi_byte_offset_i;
   logic [63:0] axi_data_o;
   logic [7:0] axi_valid_be_o;
 
@@ -25,6 +26,7 @@ module tb_axi2chi_nocoh_rd_byte_map;
     axi_byte_offset_i = 4'd4;
     fragment_byte_count_i = 4'd4;
     line_byte_offset_i = 6'd0;
+    chi_byte_offset_i = '0;
     #1;
     `CHECK(axi_data_o == 64'h0706_0504_0000_0000);
     `CHECK(axi_valid_be_o == 8'b1011_0000);

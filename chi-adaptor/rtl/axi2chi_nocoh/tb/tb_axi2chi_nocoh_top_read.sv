@@ -18,6 +18,8 @@ module tb_axi2chi_nocoh_top_read;
   localparam int unsigned DatFlitWidth = 256;
   localparam int unsigned ParentEntries = 4;
   localparam int unsigned ChildEntries = 4;
+  localparam int unsigned DataIdWidth =
+      ((64 / (ChiDataWidth / 8)) > 1) ? $clog2(64 / (ChiDataWidth / 8)) : 1;
 
   logic clk = 1'b0;
   logic aresetn = 1'b0;
@@ -72,6 +74,7 @@ module tb_axi2chi_nocoh_top_read;
   logic [ChiTxnidWidth-1:0] first_txnid;
   logic [ChiTxnidWidth-1:0] second_txnid;
   logic [ChiTxnidWidth-1:0] cross_fragment_txnid;
+  logic [ChiTxnidWidth-1:0] narrow_txnid;
 
   axi2chi_nocoh_top #(
     .AxiAddrWidth(AxiAddrWidth),
@@ -154,7 +157,8 @@ module tb_axi2chi_nocoh_top_read;
       chi_rxdat_flit_i = '0;
       chi_rxdat_flit_i[8 +: ChiTxnidWidth] =
           chi_txreq_flit_o[16 +: ChiTxnidWidth];
-      chi_rxdat_flit_i[26 +: 2] = 2'b00;
+      chi_rxdat_flit_i[24 +: DataIdWidth] = beat;
+      chi_rxdat_flit_i[27 +: 2] = 2'b00;
       chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
       chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'hfeed_face_cafe_bee0 + beat;
       chi_rxdat_flitv_i = 1'b1;
@@ -208,7 +212,9 @@ module tb_axi2chi_nocoh_top_read;
     chi_txreq_lcrdv_i = 1'b0;
 
     chi_rxdat_flit_i = '0;
-    chi_rxdat_flit_i[26 +: 2] = 2'b00;
+    chi_rxdat_flit_i[8 +: ChiTxnidWidth] =
+        chi_txreq_flit_o[16 +: ChiTxnidWidth];
+    chi_rxdat_flit_i[27 +: 2] = 2'b00;
     chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
     chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'h1111_2222_3333_4444;
     chi_rxdat_flitv_i = 1'b1;
@@ -262,7 +268,9 @@ module tb_axi2chi_nocoh_top_read;
       chi_txreq_lcrdv_i = 1'b0;
 
       chi_rxdat_flit_i = '0;
-      chi_rxdat_flit_i[26 +: 2] = 2'b00;
+      chi_rxdat_flit_i[8 +: ChiTxnidWidth] =
+          chi_txreq_flit_o[16 +: ChiTxnidWidth];
+      chi_rxdat_flit_i[27 +: 2] = 2'b00;
       chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
       chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'hf1ed_0000_0000_0000 + beat;
       chi_rxdat_flitv_i = 1'b1;
@@ -301,7 +309,10 @@ module tb_axi2chi_nocoh_top_read;
     s_axi_arvalid = 1'b0;
 
     for (int unsigned frag = 0; frag < 2; frag++) begin
-      repeat (8) begin
+      // The registered rd_data completion path may take several cycles to
+      // return the engine lane to idle before the second child is issued.
+      // Keep the wait bounded so a real credit/lifecycle deadlock still fails.
+      repeat (32) begin
         if (!chi_txreq_flitv_o) begin
           @(posedge clk);
           @(negedge clk);
@@ -317,12 +328,15 @@ module tb_axi2chi_nocoh_top_read;
       @(negedge clk);
       chi_txreq_lcrdv_i = 1'b0;
       chi_rxdat_flit_i = '0;
+      chi_rxdat_flit_i[8 +: ChiTxnidWidth] = cross_fragment_txnid;
+      chi_rxdat_flit_i[24 +: DataIdWidth] = frag == 0 ? 3'd7 : '0;
       chi_rxdat_flit_i[8 +: ChiTxnidWidth] =
           cross_fragment_txnid;
-      chi_rxdat_flit_i[26 +: 2] = 2'b00;
-      chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
+      chi_rxdat_flit_i[27 +: 2] = 2'b00;
+      chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] =
+          frag == 0 ? 8'hf0 : 8'h0f;
       chi_rxdat_flit_i[64 +: ChiDataWidth] =
-          frag == 0 ? 64'h0000_0000_ddcc_bbaa : 64'h0000_0000_0000_ffee;
+          frag == 0 ? 64'hddcc_bbaa_0000_0000 : 64'h0000_0000_0000_ffee;
       chi_rxdat_flitv_i = 1'b1;
       @(posedge clk);
       @(negedge clk);
@@ -369,14 +383,17 @@ module tb_axi2chi_nocoh_top_read;
     #1;
     `CHECK(chi_txreq_flitv_o);
     `CHECK(chi_txreq_flit_o[32 +: AxiAddrWidth] == 32'h0000_1113);
+    narrow_txnid = chi_txreq_flit_o[16 +: ChiTxnidWidth];
     chi_txreq_lcrdv_i = 1'b1;
     @(posedge clk);
     @(negedge clk);
     chi_txreq_lcrdv_i = 1'b0;
     chi_rxdat_flit_i = '0;
-    chi_rxdat_flit_i[26 +: 2] = 2'b00;
-    chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'h0f;
-    chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'h0000_0000_ddcc_bbaa;
+    chi_rxdat_flit_i[8 +: ChiTxnidWidth] = narrow_txnid;
+    chi_rxdat_flit_i[24 +: DataIdWidth] = 3'd2;
+    chi_rxdat_flit_i[27 +: 2] = 2'b00;
+    chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'h78;
+    chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'h00dd_ccbb_aa00_0000;
     chi_rxdat_flitv_i = 1'b1;
     #1;
     `CHECK(chi_rxdat_lcrdv_o);
@@ -449,6 +466,7 @@ module tb_axi2chi_nocoh_top_read;
 
     chi_rxdat_flit_i = '0;
     chi_rxdat_flit_i[8 +: ChiTxnidWidth] = second_txnid;
+    chi_rxdat_flit_i[24 +: DataIdWidth] = '0;
     chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
     chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'h2222_2222_2222_2222;
     chi_rxdat_flitv_i = 1'b1;
@@ -463,6 +481,7 @@ module tb_axi2chi_nocoh_top_read;
 
     chi_rxdat_flit_i = '0;
     chi_rxdat_flit_i[8 +: ChiTxnidWidth] = first_txnid;
+    chi_rxdat_flit_i[24 +: DataIdWidth] = '0;
     chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
     chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'h1111_1111_1111_1111;
     chi_rxdat_flitv_i = 1'b1;

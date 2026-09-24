@@ -12,6 +12,7 @@ module axi2chi_nocoh_rd_byte_map #(
   input logic [$clog2(AxiDataWidth / 8 + 1)-1:0] axi_byte_offset_i,
   input logic [$clog2(AxiDataWidth / 8 + 1)-1:0] fragment_byte_count_i,
   input logic [$clog2(CacheLineBytes)-1:0] line_byte_offset_i,
+  input logic [$clog2(ChiDataWidth / 8 + 1)-1:0] chi_byte_offset_i,
   output logic [AxiDataWidth-1:0] axi_data_o,
   output logic [AxiDataWidth / 8-1:0] axi_valid_be_o
 );
@@ -27,9 +28,9 @@ module axi2chi_nocoh_rd_byte_map #(
           byte_idx < axi_byte_offset_i + fragment_byte_count_i &&
           byte_idx - axi_byte_offset_i < ChiBytes) begin
         axi_data_o[byte_idx * 8 +: 8] =
-            chi_data_i[(byte_idx - axi_byte_offset_i) * 8 +: 8];
+            chi_data_i[(chi_byte_offset_i + byte_idx - axi_byte_offset_i) * 8 +: 8];
         axi_valid_be_o[byte_idx] =
-            chi_be_i[byte_idx - axi_byte_offset_i];
+            chi_be_i[chi_byte_offset_i + byte_idx - axi_byte_offset_i];
       end
     end
   end

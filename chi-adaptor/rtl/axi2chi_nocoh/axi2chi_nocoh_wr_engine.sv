@@ -46,6 +46,7 @@ module axi2chi_nocoh_wr_engine #(
   input logic wr_fragment_valid_i,
   input logic [$clog2(ChildEntries)-1:0] wr_fragment_child_idx_i,
   input logic [DatFlitWidth-1:0] wr_fragment_payload_i,
+  input logic wr_fragment_last_i,
   output logic wr_fragment_ready_o,
   output logic [ChildEntries-1:0] wr_wait_child_vec_o
 );
@@ -75,6 +76,7 @@ module axi2chi_nocoh_wr_engine #(
   logic [DatFlitWidth-1:0] dat_payload_q [ChildEntries];
   logic [1:0] resp_q [ChildEntries];
   logic completion_seen_q [ChildEntries];
+  logic dat_last_q [ChildEntries];
   logic [$clog2(ChildEntries)-1:0] issue_lane_idx;
   logic issue_lane_found;
   logic [$clog2(ChildEntries)-1:0] alloc_lane_idx;
@@ -231,6 +233,7 @@ module axi2chi_nocoh_wr_engine #(
         dat_payload_q[idx] <= '0;
         resp_q[idx] <= '0;
         completion_seen_q[idx] <= 1'b0;
+        dat_last_q[idx] <= 1'b0;
       end
       dbid_fire_q <= 1'b0;
       dbid_lane_q <= '0;
@@ -272,11 +275,14 @@ module axi2chi_nocoh_wr_engine #(
 
       if (wr_fragment_fire) begin
         dat_payload_q[w_lane_idx] <= wr_fragment_payload_i;
+        dat_last_q[w_lane_idx] <= wr_fragment_last_i;
         state_q[w_lane_idx] <= kWrIssueDat;
       end
 
       if (txdat_fire) begin
-        if (completion_seen_q[txdat_lane_idx]) begin
+        if (!dat_last_q[txdat_lane_idx]) begin
+          state_q[txdat_lane_idx] <= kWrWaitW;
+        end else if (completion_seen_q[txdat_lane_idx]) begin
           state_q[txdat_lane_idx] <= kWrComplete;
         end else begin
           state_q[txdat_lane_idx] <= kWrWaitComp;

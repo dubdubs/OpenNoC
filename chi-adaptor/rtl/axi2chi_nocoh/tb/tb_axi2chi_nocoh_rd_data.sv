@@ -12,6 +12,7 @@ module tb_axi2chi_nocoh_rd_data;
   localparam int unsigned ChiDataWidth = 128;
   localparam int unsigned ParentEntries = 8;
   localparam int unsigned ChildEntries = 8;
+  localparam int unsigned DataIdWidth = $clog2(64 / (ChiDataWidth / 8));
 
   logic clk = 1'b0;
   logic rst = 1'b1;
@@ -24,6 +25,7 @@ module tb_axi2chi_nocoh_rd_data;
   logic [7:0] fragment_axi_beat_i;
   logic [ChiDataWidth-1:0] fragment_data_i;
   logic [ChiDataWidth / 8-1:0] fragment_be_i;
+  logic [DataIdWidth-1:0] fragment_dataid_i;
   logic [1:0] fragment_resp_i;
   logic fragment_last_i;
   logic fragment_last_fragment_i;
@@ -42,6 +44,9 @@ module tb_axi2chi_nocoh_rd_data;
   logic [AxiDataWidth-1:0] rd_rsp_data_o;
   logic [1:0] rd_rsp_resp_o;
   logic rd_rsp_last_o;
+  logic child_complete_valid_o;
+  logic [$clog2(ChildEntries)-1:0] child_complete_idx_o;
+  logic [1:0] child_complete_resp_o;
 
   axi2chi_nocoh_rd_data #(
     .AxiDataWidth(AxiDataWidth),
@@ -63,6 +68,7 @@ module tb_axi2chi_nocoh_rd_data;
     fragment_axi_beat_i = '0;
     fragment_data_i = '0;
     fragment_be_i = '0;
+    fragment_dataid_i = '0;
     fragment_resp_i = '0;
     fragment_last_i = 1'b1;
     fragment_last_fragment_i = 1'b1;
@@ -146,6 +152,7 @@ module tb_axi2chi_nocoh_rd_data;
 
     fragment_valid_i = 1'b1;
     fragment_child_idx_i = 3'd1;
+    fragment_dataid_i = '0;
     fragment_data_i = 128'h0000_0000_0000_0000_0000_0000_ffee_ddcc;
     fragment_be_i = 16'h000f;
     fragment_axi_byte_offset_i = 4'd4;
@@ -173,6 +180,7 @@ module tb_axi2chi_nocoh_rd_data;
 
     fragment_valid_i = 1'b1;
     fragment_child_idx_i = 3'd2;
+    fragment_dataid_i = '0;
     fragment_parent_idx_i = 3'd1;
     fragment_axi_id_i = 3'd3;
     fragment_data_i = 128'h0000_0000_0000_0000_0000_0000_4433_2211;
