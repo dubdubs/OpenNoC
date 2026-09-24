@@ -45,7 +45,8 @@ module axi2chi_nocoh_rd_engine #(
   output logic [DatFlitWidth-1:0] rd_fragment_payload_o,
   input logic rd_fragment_ready_i,
   input logic rd_child_complete_valid_i,
-  input logic [$clog2(ChildEntries)-1:0] rd_child_complete_idx_i
+  input logic [$clog2(ChildEntries)-1:0] rd_child_complete_idx_i,
+  output logic unknown_rxdat_fire_o
 );
 
   localparam int unsigned ChildIndexWidth = $clog2(ChildEntries);
@@ -144,6 +145,7 @@ module axi2chi_nocoh_rd_engine #(
     rd_fragment_valid_o = 1'b0;
     rd_fragment_child_idx_o = child_q[fragment_lane_idx];
     rd_fragment_payload_o = rxdat_payload_q[fragment_lane_idx];
+    unknown_rxdat_fire_o = 1'b0;
 
     if (!rst) begin
       rd_issue_ready_o = issue_lane_found;
@@ -167,6 +169,7 @@ module axi2chi_nocoh_rd_engine #(
     alloc_fire = child_alloc_valid_o && child_alloc_ready_i;
     txreq_fire = txreq_valid_o && txreq_ready_i;
     rxdat_fire = rxdat_valid_i && rxdat_ready_o;
+    unknown_rxdat_fire_o = rxdat_fire && !rxdat_lane_found;
     fragment_fire = rd_fragment_valid_o && rd_fragment_ready_i;
   end
 

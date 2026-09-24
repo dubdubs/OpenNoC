@@ -53,6 +53,7 @@ module axi2chi_nocoh_wr_engine #(
   input logic wr_fragment_error_i,
   output logic wr_fragment_ready_o,
   output logic [ChildEntries-1:0] wr_wait_child_vec_o
+  ,output logic unknown_rxrsp_fire_o
 );
 
   localparam int unsigned ChildIndexWidth = $clog2(ChildEntries);
@@ -195,6 +196,7 @@ module axi2chi_nocoh_wr_engine #(
     txdat_payload_o = dat_payload_q[txdat_lane_idx];
     rxrsp_ready_o = 1'b0;
     wr_fragment_ready_o = 1'b0;
+    unknown_rxrsp_fire_o = 1'b0;
 
     if (!rst) begin
       wr_issue_ready_o = issue_lane_found;
@@ -227,6 +229,8 @@ module axi2chi_nocoh_wr_engine #(
     wr_fragment_fire = wr_fragment_valid_i && wr_fragment_ready_o;
     txdat_fire = txdat_valid_o && txdat_ready_i;
     comp_fire = rxrsp_valid_i && comp_lane_found;
+    unknown_rxrsp_fire_o = rxrsp_valid_i && rxrsp_ready_o &&
+        !dbid_lane_found && !comp_lane_found;
   end
 
   always_ff @(posedge clk) begin

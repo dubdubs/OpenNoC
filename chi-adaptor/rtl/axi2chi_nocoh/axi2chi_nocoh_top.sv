@@ -129,6 +129,10 @@ module axi2chi_nocoh_top #(
   logic core_rxdat_valid;
   logic [DatFlitWidth-1:0] core_rxdat_payload;
   logic core_rxdat_ready;
+  logic rd_unknown_rxdat_fire;
+  logic wr_unknown_rxrsp_fire;
+  logic [31:0] unknown_rxdat_count_q;
+  logic [31:0] unknown_rxrsp_count_q;
   logic slave_rd_admit_valid;
   logic slave_rd_admit_ready;
   logic [AxiIdWidth-1:0] slave_rd_admit_id;
@@ -564,7 +568,8 @@ module axi2chi_nocoh_top #(
     .rd_fragment_payload_o(rd_fragment_payload),
     .rd_fragment_ready_i(rd_fragment_ready),
     .rd_child_complete_valid_i(rd_data_child_complete_valid),
-    .rd_child_complete_idx_i(rd_data_child_complete_idx)
+    .rd_child_complete_idx_i(rd_data_child_complete_idx),
+    .unknown_rxdat_fire_o(rd_unknown_rxdat_fire)
   );
 
   axi2chi_nocoh_rd_data #(
@@ -700,16 +705,25 @@ module axi2chi_nocoh_top #(
     .wr_fragment_last_i(wr_data_fragment_last),
     .wr_fragment_error_i(wr_data_fragment_error),
     .wr_fragment_ready_o(wr_data_fragment_ready),
-    .wr_wait_child_vec_o(wr_wait_child_vec)
+    .wr_wait_child_vec_o(wr_wait_child_vec),
+    .unknown_rxrsp_fire_o(wr_unknown_rxrsp_fire)
   );
 
   always_ff @(posedge clk) begin
     if (rst) begin
       wr_rsp_valid_q <= '0;
+      unknown_rxdat_count_q <= '0;
+      unknown_rxrsp_count_q <= '0;
       for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
         wr_rsp_resp_q[idx] <= '0;
       end
     end else begin
+      if (rd_unknown_rxdat_fire && unknown_rxdat_count_q != '1) begin
+        unknown_rxdat_count_q <= unknown_rxdat_count_q + 1'b1;
+      end
+      if (wr_unknown_rxrsp_fire && unknown_rxrsp_count_q != '1) begin
+        unknown_rxrsp_count_q <= unknown_rxrsp_count_q + 1'b1;
+      end
       if (wr_child_event_valid && child_event_parent_complete) begin
         wr_rsp_valid_q[child_event_parent_idx] <= 1'b1;
         wr_rsp_resp_q[child_event_parent_idx] <=

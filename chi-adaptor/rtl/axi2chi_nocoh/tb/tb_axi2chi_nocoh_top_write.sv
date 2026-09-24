@@ -174,6 +174,13 @@ module tb_axi2chi_nocoh_top_write;
     rsp_payload[3:0] = 4'h3;
     rsp_payload[8 +: ChiTxnidWidth] = {ChiTxnidWidth{1'b1}};
     send_rxrsp(rsp_payload);
+    repeat (4) begin
+      if (dut.unknown_rxrsp_count_q != 32'd1) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    `CHECK(dut.unknown_rxrsp_count_q == 32'd1);
 
     s_axi_awvalid = 1'b1;
     #1;
