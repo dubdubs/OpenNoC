@@ -175,6 +175,7 @@ module axi2chi_nocoh_top #(
   logic wr_data_fragment_valid;
   logic wr_data_fragment_ready;
   logic wr_data_child_bind_ready;
+  logic [ChildEntries-1:0] wr_wait_child_vec;
   logic wr_beat_ready;
   logic [ChildIndexWidth-1:0] wr_data_fragment_child_idx;
   logic [ChiDataWidth-1:0] wr_data_fragment_data;
@@ -571,6 +572,7 @@ module axi2chi_nocoh_top #(
     .wr_beat_strb_i(slave_wr_beat_strb),
     .wr_beat_last_i(slave_wr_beat_last),
     .child_bind_valid_i(wr_child_alloc_valid && wr_child_alloc_ready),
+    .child_waiting_i(wr_wait_child_vec),
     .child_bind_ready_o(wr_data_child_bind_ready),
     .child_bind_parent_idx_i(wr_child_alloc_parent_idx),
     .child_bind_idx_i(wr_child_alloc_idx),
@@ -628,7 +630,8 @@ module axi2chi_nocoh_top #(
     .wr_fragment_valid_i(wr_data_fragment_valid),
     .wr_fragment_child_idx_i(wr_data_fragment_child_idx),
     .wr_fragment_payload_i(wr_fragment_payload),
-    .wr_fragment_ready_o(wr_data_fragment_ready)
+    .wr_fragment_ready_o(wr_data_fragment_ready),
+    .wr_wait_child_vec_o(wr_wait_child_vec)
   );
 
   always_ff @(posedge clk) begin

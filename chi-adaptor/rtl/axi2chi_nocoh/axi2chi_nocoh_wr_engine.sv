@@ -47,6 +47,7 @@ module axi2chi_nocoh_wr_engine #(
   input logic [$clog2(ChildEntries)-1:0] wr_fragment_child_idx_i,
   input logic [DatFlitWidth-1:0] wr_fragment_payload_i,
   output logic wr_fragment_ready_o
+  ,output logic [ChildEntries-1:0] wr_wait_child_vec_o
 );
 
   localparam int unsigned ChildIndexWidth = $clog2(ChildEntries);
@@ -99,6 +100,8 @@ module axi2chi_nocoh_wr_engine #(
   logic wr_fragment_fire;
   logic txdat_fire;
   logic comp_fire;
+  logic dbid_fire_q;
+  logic [ChildIndexWidth-1:0] dbid_lane_q;
 
   always_comb begin
     issue_lane_idx = '0;
@@ -117,6 +120,7 @@ module axi2chi_nocoh_wr_engine #(
     comp_lane_found = 1'b0;
     event_lane_idx = '0;
     event_lane_found = 1'b0;
+    wr_wait_child_vec_o = '0;
     rxrsp_txnid = rxrsp_payload_i[8 +: ChiTxnidWidth];
     rxrsp_opcode = rxrsp_payload_i[3:0];
     for (int unsigned idx = 0; idx < ChildEntries; idx++) begin
@@ -142,6 +146,9 @@ module axi2chi_nocoh_wr_engine #(
           !w_lane_found) begin
         w_lane_idx = ChildIndexWidth'(idx);
         w_lane_found = 1'b1;
+      end
+      if (state_q[idx] == kWrWaitW) begin
+        wr_wait_child_vec_o[child_q[idx]] = 1'b1;
       end
       if (state_q[idx] == kWrIssueDat && !txdat_lane_found) begin
         txdat_lane_idx = ChildIndexWidth'(idx);
@@ -225,7 +232,13 @@ module axi2chi_nocoh_wr_engine #(
         resp_q[idx] <= '0;
         completion_seen_q[idx] <= 1'b0;
       end
+      dbid_fire_q <= 1'b0;
+      dbid_lane_q <= '0;
     end else begin
+      dbid_fire_q <= dbid_fire;
+      if (dbid_fire) begin
+        dbid_lane_q <= dbid_lane_idx;
+      end
       if (issue_fire) begin
         parent_q[issue_lane_idx] <= wr_issue_parent_idx_i;
         addr_q[issue_lane_idx] <= wr_issue_addr_i;
@@ -277,6 +290,19 @@ module axi2chi_nocoh_wr_engine #(
       end
     end
   end
+
+`ifndef SYNTHESIS
+  always_ff @(posedge clk) begin
+    if (!rst && dbid_fire_q) begin
+      assert (state_q[dbid_lane_q] == kWrWaitW)
+      else $fatal(1, "DBID-matched write lane did not enter WaitW");
+    end
+    if (!rst && wr_fragment_fire) begin
+      assert (w_lane_found)
+      else $fatal(1, "Accepted write fragment has no WaitW engine lane");
+    end
+  end
+`endif
 
 endmodule
 

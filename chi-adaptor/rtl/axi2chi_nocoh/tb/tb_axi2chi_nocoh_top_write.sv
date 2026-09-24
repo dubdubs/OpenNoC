@@ -71,6 +71,47 @@ module tb_axi2chi_nocoh_top_write;
   logic chi_rxlinkactiveack_o;
   logic [ChiTxnidWidth-1:0] write_txnid;
   logic [ChiTxnidWidth-1:0] cross_write_txnid;
+  logic [ChiTxnidWidth-1:0] same_id_txnid [0:2];
+  logic [1:0] same_id_completion_order [0:2];
+  logic same_id_responder_active;
+  logic [2:0] same_id_req_seen;
+  logic [$clog2(ParentEntries)-1:0] same_id_parent_idx [0:2];
+  logic [RspFlitWidth-1:0] rsp_payload;
+
+  task automatic send_rxrsp(input logic [RspFlitWidth-1:0] payload);
+    begin
+      chi_rxrsp_flit_i = payload;
+      chi_rxrsp_flitv_i = 1'b1;
+      do begin
+        @(posedge clk);
+      end while (!chi_rxrsp_lcrdv_o);
+      @(negedge clk);
+      chi_rxrsp_flitv_i = 1'b0;
+    end
+  endtask
+
+  // LCRDV returns a credit; it is not a ready signal.  Keep the receiver's
+  // two-entry model replenished while this scenario is active, and sample the
+  // flit on the send edge to maintain an address-to-TxnID scoreboard.
+  always @(negedge clk) begin
+    if (same_id_responder_active) begin
+      chi_txreq_lcrdv_i = 1'b1;
+    end
+  end
+
+  always @(posedge clk) begin
+    if (same_id_responder_active && chi_txreq_flitv_o) begin
+      for (int unsigned txn = 0; txn < 3; txn++) begin
+        if (chi_txreq_flit_o[32 +: AxiAddrWidth] ==
+            32'h0000_3100 + (txn << 3)) begin
+          `CHECK(!same_id_req_seen[txn]);
+          same_id_txnid[txn] = chi_txreq_flit_o[16 +: ChiTxnidWidth];
+          same_id_req_seen[txn] = 1'b1;
+        end
+      end
+    end
+  end
+
 
   axi2chi_nocoh_top #(
     .AxiAddrWidth(AxiAddrWidth),
@@ -116,6 +157,8 @@ module tb_axi2chi_nocoh_top_write;
     chi_rxdat_flit_i = '0;
     chi_txlinkactiveack_i = 1'b0;
     chi_rxlinkactivereq_i = 1'b1;
+    same_id_responder_active = 1'b0;
+    same_id_req_seen = '0;
 
     @(negedge clk);
     aresetn = 1'b1;
@@ -145,17 +188,12 @@ module tb_axi2chi_nocoh_top_write;
     @(posedge clk);
     @(negedge clk);
 
-    chi_rxrsp_flit_i = '0;
+    rsp_payload = '0;
     // CompDBIDResp grants the DBID and completes the write before TXDAT.
-    chi_rxrsp_flit_i[3:0] = 4'h2;
-    chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'h5a;
-    chi_rxrsp_flit_i[36 +: 2] = 2'b00;
-    chi_rxrsp_flitv_i = 1'b1;
-    #1;
-    `CHECK(chi_rxrsp_lcrdv_o);
-    @(posedge clk);
-    @(negedge clk);
-    chi_rxrsp_flitv_i = 1'b0;
+    rsp_payload[3:0] = 4'h2;
+    rsp_payload[24 +: ChiDbidWidth] = 8'h5a;
+    rsp_payload[36 +: 2] = 2'b00;
+    send_rxrsp(rsp_payload);
 
     s_axi_wvalid = 1'b1;
     repeat (3) begin
@@ -223,14 +261,11 @@ module tb_axi2chi_nocoh_top_write;
     @(posedge clk);
     @(negedge clk);
 
-    chi_rxrsp_flit_i = '0;
-    chi_rxrsp_flit_i[3:0] = 4'h1;
-    chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'h33;
-    chi_rxrsp_flit_i[36 +: 2] = 2'b00;
-    chi_rxrsp_flitv_i = 1'b1;
-    @(posedge clk);
-    @(negedge clk);
-    chi_rxrsp_flitv_i = 1'b0;
+    rsp_payload = '0;
+    rsp_payload[3:0] = 4'h1;
+    rsp_payload[24 +: ChiDbidWidth] = 8'h33;
+    rsp_payload[36 +: 2] = 2'b00;
+    send_rxrsp(rsp_payload);
 
     s_axi_wvalid = 1'b1;
     repeat (3) begin
@@ -258,13 +293,10 @@ module tb_axi2chi_nocoh_top_write;
     @(posedge clk);
     @(negedge clk);
 
-    chi_rxrsp_flit_i = '0;
-    chi_rxrsp_flit_i[3:0] = 4'h3;
-    chi_rxrsp_flit_i[36 +: 2] = 2'b00;
-    chi_rxrsp_flitv_i = 1'b1;
-    @(posedge clk);
-    @(negedge clk);
-    chi_rxrsp_flitv_i = 1'b0;
+    rsp_payload = '0;
+    rsp_payload[3:0] = 4'h3;
+    rsp_payload[36 +: 2] = 2'b00;
+    send_rxrsp(rsp_payload);
 
     repeat (4) begin
       if (!s_axi_bvalid) begin
@@ -324,17 +356,12 @@ module tb_axi2chi_nocoh_top_write;
       @(negedge clk);
       chi_txreq_lcrdv_i = 1'b0;
 
-      chi_rxrsp_flit_i = '0;
-      chi_rxrsp_flit_i[3:0] = 4'h1;
-      chi_rxrsp_flit_i[8 +: ChiTxnidWidth] = write_txnid;
-      chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'h80 + beat;
-      chi_rxrsp_flit_i[36 +: 2] = 2'b00;
-      chi_rxrsp_flitv_i = 1'b1;
-      #1;
-      `CHECK(chi_rxrsp_lcrdv_o);
-      @(posedge clk);
-      @(negedge clk);
-      chi_rxrsp_flitv_i = 1'b0;
+      rsp_payload = '0;
+      rsp_payload[3:0] = 4'h1;
+      rsp_payload[8 +: ChiTxnidWidth] = write_txnid;
+      rsp_payload[24 +: ChiDbidWidth] = 8'h80 + beat;
+      rsp_payload[36 +: 2] = 2'b00;
+      send_rxrsp(rsp_payload);
 
       s_axi_wdata = 64'h4000_0000_0000_0000 + beat;
       s_axi_wstrb = 8'hff;
@@ -370,16 +397,11 @@ module tb_axi2chi_nocoh_top_write;
       @(negedge clk);
       chi_txdat_lcrdv_i = 1'b0;
 
-      chi_rxrsp_flit_i = '0;
-      chi_rxrsp_flit_i[3:0] = 4'h3;
-      chi_rxrsp_flit_i[8 +: ChiTxnidWidth] = write_txnid;
-      chi_rxrsp_flit_i[36 +: 2] = 2'b00;
-      chi_rxrsp_flitv_i = 1'b1;
-      #1;
-      `CHECK(chi_rxrsp_lcrdv_o);
-      @(posedge clk);
-      @(negedge clk);
-      chi_rxrsp_flitv_i = 1'b0;
+      rsp_payload = '0;
+      rsp_payload[3:0] = 4'h3;
+      rsp_payload[8 +: ChiTxnidWidth] = write_txnid;
+      rsp_payload[36 +: 2] = 2'b00;
+      send_rxrsp(rsp_payload);
       if (beat < 3) begin
         #1;
         `CHECK(!s_axi_bvalid);
@@ -436,17 +458,12 @@ module tb_axi2chi_nocoh_top_write;
       @(negedge clk);
       chi_txreq_lcrdv_i = 1'b0;
 
-      chi_rxrsp_flit_i = '0;
-      chi_rxrsp_flit_i[3:0] = 4'h1;
-      chi_rxrsp_flit_i[8 +: ChiTxnidWidth] = cross_write_txnid;
-      chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'ha0 + frag;
-      chi_rxrsp_flit_i[36 +: 2] = 2'b00;
-      chi_rxrsp_flitv_i = 1'b1;
-      #1;
-      `CHECK(chi_rxrsp_lcrdv_o);
-      @(posedge clk);
-      @(negedge clk);
-      chi_rxrsp_flitv_i = 1'b0;
+      rsp_payload = '0;
+      rsp_payload[3:0] = 4'h1;
+      rsp_payload[8 +: ChiTxnidWidth] = cross_write_txnid;
+      rsp_payload[24 +: ChiDbidWidth] = 8'ha0 + frag;
+      rsp_payload[36 +: 2] = 2'b00;
+      send_rxrsp(rsp_payload);
 
       if (frag == 0) begin
         s_axi_wvalid = 1'b1;
@@ -481,16 +498,11 @@ module tb_axi2chi_nocoh_top_write;
       @(negedge clk);
       chi_txdat_lcrdv_i = 1'b0;
 
-      chi_rxrsp_flit_i = '0;
-      chi_rxrsp_flit_i[3:0] = 4'h3;
-      chi_rxrsp_flit_i[8 +: ChiTxnidWidth] = cross_write_txnid;
-      chi_rxrsp_flit_i[36 +: 2] = 2'b00;
-      chi_rxrsp_flitv_i = 1'b1;
-      #1;
-      `CHECK(chi_rxrsp_lcrdv_o);
-      @(posedge clk);
-      @(negedge clk);
-      chi_rxrsp_flitv_i = 1'b0;
+      rsp_payload = '0;
+      rsp_payload[3:0] = 4'h3;
+      rsp_payload[8 +: ChiTxnidWidth] = cross_write_txnid;
+      rsp_payload[36 +: 2] = 2'b00;
+      send_rxrsp(rsp_payload);
       if (frag == 0) begin
         #1;
         `CHECK(!s_axi_bvalid);
@@ -539,15 +551,10 @@ module tb_axi2chi_nocoh_top_write;
     @(posedge clk);
     @(negedge clk);
     chi_txreq_lcrdv_i = 1'b0;
-    chi_rxrsp_flit_i = '0;
-    chi_rxrsp_flit_i[3:0] = 4'h1;
-    chi_rxrsp_flit_i[24 +: ChiDbidWidth] = 8'hb1;
-    chi_rxrsp_flitv_i = 1'b1;
-    #1;
-    `CHECK(chi_rxrsp_lcrdv_o);
-    @(posedge clk);
-    @(negedge clk);
-    chi_rxrsp_flitv_i = 1'b0;
+    rsp_payload = '0;
+    rsp_payload[3:0] = 4'h1;
+    rsp_payload[24 +: ChiDbidWidth] = 8'hb1;
+    send_rxrsp(rsp_payload);
     s_axi_wvalid = 1'b1;
     repeat (4) begin
       if (!s_axi_wready) begin
@@ -575,14 +582,9 @@ module tb_axi2chi_nocoh_top_write;
     @(posedge clk);
     @(negedge clk);
     chi_txdat_lcrdv_i = 1'b0;
-    chi_rxrsp_flit_i = '0;
-    chi_rxrsp_flit_i[3:0] = 4'h3;
-    chi_rxrsp_flitv_i = 1'b1;
-    #1;
-    `CHECK(chi_rxrsp_lcrdv_o);
-    @(posedge clk);
-    @(negedge clk);
-    chi_rxrsp_flitv_i = 1'b0;
+    rsp_payload = '0;
+    rsp_payload[3:0] = 4'h3;
+    send_rxrsp(rsp_payload);
     repeat (4) begin
       if (!s_axi_bvalid) begin
         @(posedge clk);
@@ -594,6 +596,119 @@ module tb_axi2chi_nocoh_top_write;
     s_axi_bready = 1'b1;
     @(posedge clk);
     @(negedge clk);
+
+    // Three outstanding writes sharing one AXI ID may complete on CHI in any
+    // order.  Their AXI B responses must still follow AW admission order.
+    same_id_completion_order[0] = 2'd1;
+    same_id_completion_order[1] = 2'd2;
+    same_id_completion_order[2] = 2'd0;
+    same_id_req_seen = '0;
+    same_id_responder_active = 1'b1;
+    s_axi_bready = 1'b0;
+    for (int unsigned txn = 0; txn < 3; txn++) begin
+      s_axi_awid = 2'd2;
+      s_axi_awaddr = 32'h0000_3100 + (txn << 3);
+      s_axi_awlen = '0;
+      s_axi_awsize = 3'd3;
+      s_axi_awburst = 2'b01;
+      s_axi_awvalid = 1'b1;
+      // Let the combinational AWREADY path settle before polling it.
+      #1;
+      repeat (8) begin
+        if (!s_axi_awready) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(s_axi_awready);
+      @(posedge clk);
+      // Deassert after the sampled handshake, before a following edge.
+      #1;
+      s_axi_awvalid = 1'b0;
+      @(negedge clk);
+      // Leave one complete idle cycle between AW commands.  This makes each
+      // directed command a distinct AXI valid phase and prevents a zero-time
+      // driver transition from being sampled as a second handshake.
+      @(posedge clk);
+      @(negedge clk);
+    end
+    for (int unsigned txn = 0; txn < 3; txn++) begin
+      repeat (16) begin
+        if (!same_id_req_seen[txn]) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      `CHECK(same_id_req_seen[txn]);
+
+      rsp_payload = '0;
+      rsp_payload[3:0] = 4'h1;
+      rsp_payload[8 +: ChiTxnidWidth] = same_id_txnid[txn];
+      rsp_payload[24 +: ChiDbidWidth] = 8'hc0 + txn;
+      send_rxrsp(rsp_payload);
+
+      s_axi_wdata = 64'h5000_0000_0000_0000 + txn;
+      s_axi_wstrb = 8'hff;
+      s_axi_wlast = 1'b1;
+      s_axi_wvalid = 1'b1;
+      repeat (8) begin
+        if (!s_axi_wready) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(s_axi_wready);
+      @(posedge clk);
+      @(negedge clk);
+      s_axi_wvalid = 1'b0;
+      repeat (64) begin
+        if (!chi_txdat_flitv_o) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(chi_txdat_flitv_o);
+      `CHECK(chi_txdat_flit_o[24 +: ChiDbidWidth] == 8'hc0 + txn);
+      chi_txdat_lcrdv_i = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      chi_txdat_lcrdv_i = 1'b0;
+    end
+    same_id_responder_active = 1'b0;
+    chi_txreq_lcrdv_i = 1'b0;
+    for (int unsigned ord = 0; ord < 3; ord++) begin
+      chi_rxrsp_flit_i = '0;
+      chi_rxrsp_flit_i[3:0] = 4'h3;
+      chi_rxrsp_flit_i[8 +: ChiTxnidWidth] =
+          same_id_txnid[same_id_completion_order[ord]];
+      chi_rxrsp_flitv_i = 1'b1;
+      #1;
+      `CHECK(chi_rxrsp_lcrdv_o);
+      @(posedge clk);
+      @(negedge clk);
+      chi_rxrsp_flitv_i = 1'b0;
+      if (ord < 2) begin
+        #1;
+        `CHECK(!s_axi_bvalid);
+      end
+    end
+    for (int unsigned txn = 0; txn < 3; txn++) begin
+      repeat (8) begin
+        if (!s_axi_bvalid) begin
+          @(posedge clk);
+          @(negedge clk);
+        end
+      end
+      #1;
+      `CHECK(s_axi_bvalid && s_axi_bid == 2'd2 && s_axi_bresp == 2'b00);
+      s_axi_bready = 1'b1;
+      @(posedge clk);
+      @(negedge clk);
+      s_axi_bready = 1'b0;
+    end
 
     $display("PASS: top-level AXI write, including burst and cross-line fragments");
     $finish;

@@ -283,6 +283,9 @@ module axi2chi_nocoh_slave #(
     if (!rst) begin
       assert (!(wr_beat_fire && (s_axi_wlast != active_w_expected_last)))
       else $fatal(1, "AXI WLAST does not match the admitted AWLEN");
+      assert (!(wr_beat_fire &&
+          (wr_beat_parent_idx_o != aw_order_q[aw_order_rd_ptr_q].parent_idx)))
+      else $fatal(1, "AXI W parent does not match AW-order FIFO head");
     end
   end
 `endif

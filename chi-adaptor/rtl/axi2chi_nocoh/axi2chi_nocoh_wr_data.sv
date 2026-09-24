@@ -11,6 +11,7 @@ module axi2chi_nocoh_wr_data #(
   input logic [AxiDataWidth-1:0] wr_beat_data_i,
   input logic [AxiDataWidth / 8-1:0] wr_beat_strb_i, input logic wr_beat_last_i,
   input logic child_bind_valid_i,
+  input logic [ChildEntries-1:0] child_waiting_i,
   output logic child_bind_ready_o,
   input logic [$clog2(ParentEntries)-1:0] child_bind_parent_idx_i,
   input logic [$clog2(ChildEntries)-1:0] child_bind_idx_i,
@@ -42,11 +43,15 @@ module axi2chi_nocoh_wr_data #(
   always_comb begin
     selected_found = 1'b0; selected_idx = '0;
     for (int unsigned idx = 0; idx < ParentEntries; idx++) begin
-      if (beat_valid_q[idx] && bind_valid_q[idx] && !selected_found) begin
+      if (beat_valid_q[idx] && bind_valid_q[idx] &&
+          child_waiting_i[bind_child_q[idx]] && !selected_found) begin
         selected_found = 1'b1; selected_idx = ParentIndexWidth'(idx);
       end
     end
-    wr_beat_ready_o = bind_valid_q[wr_beat_parent_idx_i] && !beat_valid_q[wr_beat_parent_idx_i];
+    // AXI W has no transaction ID.  The slave supplies its ordered parent
+    // index, so retain the beat independently of when CHI child allocation
+    // supplies the matching fragment binding.
+    wr_beat_ready_o = !beat_valid_q[wr_beat_parent_idx_i];
     child_bind_ready_o = !bind_valid_q[child_bind_parent_idx_i];
     txdat_fragment_valid_o = selected_found;
     txdat_fragment_child_idx_o = bind_child_q[selected_idx];
@@ -83,5 +88,14 @@ module axi2chi_nocoh_wr_data #(
       end
     end
   end
+
+`ifndef SYNTHESIS
+  always_ff @(posedge clk) begin
+    if (!rst && child_bind_valid_i) begin
+      assert (child_bind_ready_o)
+      else $fatal(1, "Write child bind was offered without an available slot");
+    end
+  end
+`endif
 endmodule
 `default_nettype wire
