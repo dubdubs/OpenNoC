@@ -797,6 +797,78 @@ module tb_axi2chi_nocoh_top_write;
     @(negedge clk);
     s_axi_bready = 1'b0;
 
+    // AWSIZE=4 B makes lane 4 illegal.  The offending WSTRB is retained as
+    // a beat error and must not be converted into a successful CHI write.
+    s_axi_awid = 2'd1;
+    s_axi_awaddr = 32'h0000_3310;
+    s_axi_awlen = '0;
+    s_axi_awsize = 3'd2;
+    s_axi_awburst = 2'b01;
+    s_axi_awvalid = 1'b1;
+    s_axi_wdata = 64'h0123_4567_89ab_cdef;
+    s_axi_wstrb = 8'h10;
+    s_axi_wlast = 1'b1;
+    #1;
+    `CHECK(s_axi_awready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_awvalid = 1'b0;
+    repeat (4) begin
+      if (!chi_txreq_flitv_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(chi_txreq_flitv_o);
+    chi_txreq_lcrdv_i = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    chi_txreq_lcrdv_i = 1'b0;
+    rsp_payload = '0;
+    rsp_payload[3:0] = 4'h1;
+    rsp_payload[24 +: ChiDbidWidth] = 8'hc4;
+    send_rxrsp(rsp_payload);
+    s_axi_wvalid = 1'b1;
+    repeat (4) begin
+      if (!s_axi_wready) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(s_axi_wready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_wvalid = 1'b0;
+    repeat (4) begin
+      if (!chi_txdat_flitv_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(chi_txdat_flitv_o);
+    chi_txdat_lcrdv_i = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    chi_txdat_lcrdv_i = 1'b0;
+    rsp_payload = '0;
+    rsp_payload[3:0] = 4'h3;
+    send_rxrsp(rsp_payload);
+    repeat (4) begin
+      if (!s_axi_bvalid) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(s_axi_bvalid && s_axi_bid == 2'd1 && s_axi_bresp == 2'b10);
+    s_axi_bready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_bready = 1'b0;
+
     $display("PASS: top-level AXI write, including burst and cross-line fragments");
     $finish;
   end
