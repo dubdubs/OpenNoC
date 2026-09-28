@@ -1,0 +1,58 @@
+{
+  "design_name": "axi2chi_nocoh",
+  "spec_source": "../axi2chi_nocoh.md",
+  "interfaces": [
+    {
+      "name": "axi4_slave",
+      "type": "AXI4",
+      "role": "slave",
+      "signals": [
+        {"name": "s_axi_arvalid/arready", "direction": "input", "width": 1, "description": "Read-address valid/ready handshake."},
+        {"name": "s_axi_awvalid/awready", "direction": "input", "width": 1, "description": "Write-address valid/ready handshake."},
+        {"name": "s_axi_wvalid/wready", "direction": "input", "width": 1, "description": "Ordered AXI4 write-data handshake."},
+        {"name": "s_axi_rvalid/rready", "direction": "output", "width": 1, "description": "Read-response handshake; payload must remain stable while stalled."},
+        {"name": "s_axi_bvalid/bready", "direction": "output", "width": 1, "description": "Write-response handshake; payload must remain stable while stalled."}
+      ]
+    },
+    {
+      "name": "chi_raw_link",
+      "type": "CHI",
+      "role": "master",
+      "signals": [
+        {"name": "chi_txreq_flitv_o/chi_txreq_lcrdv_i", "direction": "output", "width": 1, "description": "TXREQ transfer governed by LinkActive and credit."},
+        {"name": "chi_txdat_flitv_o/chi_txdat_lcrdv_i", "direction": "output", "width": 1, "description": "TXDAT transfer governed by LinkActive and credit."},
+        {"name": "chi_rxrsp_flitv_i/chi_rxrsp_lcrdv_o", "direction": "input", "width": 1, "description": "RXRSP receive and L-credit return."},
+        {"name": "chi_rxdat_flitv_i/chi_rxdat_lcrdv_o", "direction": "input", "width": 1, "description": "RXDAT receive and L-credit return."},
+        {"name": "chi_txlinkactivereq_o/chi_txlinkactiveack_i", "direction": "output", "width": 1, "description": "LinkActive bring-up handshake."}
+      ]
+    }
+  ],
+  "interfaces_confidence": "high",
+  "registers": [],
+  "registers_confidence": "high",
+  "fsm_summary": [
+    {"name": "read_child", "module": "axi2chi_nocoh_rd_engine", "state_register": "state_q[]", "states": ["kRdIdle", "kRdAlloc", "kRdIssueReq", "kRdWaitDat", "kRdCommitData", "kRdWaitRetire"], "reset_state": "kRdIdle", "description": "Read child allocation, request issue, RXDAT forwarding and completion ownership."},
+    {"name": "write_child", "module": "axi2chi_nocoh_wr_engine", "state_register": "state_q[]", "states": ["kWrIdle", "kWrWaitW", "kWrAlloc", "kWrIssueReq", "kWrWaitDbid", "kWrIssueDat", "kWrWaitComp", "kWrComplete"], "reset_state": "kWrIdle", "description": "Write child request, DBID, TXDAT and completion sequencing."},
+    {"name": "chi_link", "module": "axi2chi_chi_link", "state_register": "link_state_q", "states": ["kLinkReset", "kLinkActivate", "kLinkRun", "kLinkDrain"], "reset_state": "kLinkReset", "description": "LinkActive bring-up and intended drain control."}
+  ],
+  "fsm_summary_confidence": "high",
+  "macros": [
+    {"name": "CACHE_LINE_BYTES", "value": "32|64|128", "source": "Spec", "verification_impact": "Controls fragment address, DataID and Full eligibility."},
+    {"name": "AXI_DATA_WIDTH", "value": "32|64|128|256|512", "source": "Spec", "verification_impact": "Controls AXI byte lanes and narrow-transfer mapping."},
+    {"name": "CHI_DAT_WIDTH", "value": "128|256|512", "source": "Spec", "verification_impact": "Controls RXDAT/TXDAT segmentation and DataID coverage."}
+  ],
+  "macros_confidence": "high",
+  "clock_reset": {"clock_name": "clk", "clock_freq_mhz": 0, "reset_name": "rst", "reset_polarity": "active_high", "reset_type": "synchronous"},
+  "clock_reset_confidence": "medium",
+  "error_conditions": [
+    {"name": "unsupported_wrap", "trigger": "AXI burst is WRAP", "flag_register": "none", "handling": "Reject at AXI admission with DECERR."},
+    {"name": "chi_response_error", "trigger": "RXDAT/RXRSP reports an error response", "flag_register": "parent error_seen", "handling": "Retire the corresponding AXI R/B with SLVERR."},
+    {"name": "write_protocol_error", "trigger": "CompDBIDResp completion occurs before all required W/TXDAT activity", "flag_register": "parent error_seen", "handling": "Record protocol error and return SLVERR; do not synthesize success."},
+    {"name": "unknown_chi_transaction", "trigger": "RXDAT/RXRSP TxnID/opcode has no matching child", "flag_register": "unknown response counter", "handling": "Consume flit so shared RX FIFO cannot deadlock; do not mutate a context."}
+  ],
+  "error_conditions_confidence": "high",
+  "mismatches": [
+    {"location": "axi2chi_chi_link.sv:48", "description": "Specification requires normal power-down drain, but the visible RTL interface has no quiesce/link-down request or drain-complete signal and kLinkDrain has no transition.", "severity": "high", "recommendation": "Specify the control interface and AXI behavior during drain before implementing or verifying this transition."},
+    {"location": "verification environment", "description": "The supplied structure-extraction script requires Python 3; this environment exposes only Python 2 as /usr/bin/python.", "severity": "low", "recommendation": "Use a Python 3 environment for automated extraction; this testplan uses a manually reviewed RTL structure meanwhile."}
+  ]
+}

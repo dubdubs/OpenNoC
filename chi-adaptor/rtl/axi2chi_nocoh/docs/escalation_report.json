@@ -1,0 +1,10 @@
+{
+  "stage": "spec-to-testplan",
+  "timestamp": "2026-09-28T00:00:00+08:00",
+  "round": 1,
+  "unresolved_errors": [
+    {"category": "spec_ambiguity", "file": "axi2chi_nocoh.md", "line": 111, "description": "Normal link power-down requires drain but specifies no control interface, completion signal, or AXI transaction policy.", "attempted_fix": null, "reason_escalated": "Adding a request/acknowledge interface or choosing abort semantics would be an unsupported architectural assumption."},
+    {"category": "tool_environment", "file": "/home/xylan/.codex/skills/spec-to-testplan/scripts/parse_rtl_structure.py", "line": null, "description": "The supplied script requires Python 3; only Python 2 is available as /usr/bin/python.", "attempted_fix": "Tried python3 and then /usr/bin/python.", "reason_escalated": "Installing or changing the execution environment is outside this RTL verification task."}
+  ],
+  "recommendation": "Confirm link-drain interface and policy. Verification can proceed for all other cycle-defined Step 5 scenarios."
+}

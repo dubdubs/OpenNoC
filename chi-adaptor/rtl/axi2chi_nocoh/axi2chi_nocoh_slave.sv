@@ -107,6 +107,17 @@ module axi2chi_nocoh_slave #(
   logic local_wrap_read;
   logic local_wrap_write;
 
+`ifndef SYNTHESIS
+  logic r_stall_q;
+  logic [AxiIdWidth-1:0] r_id_q;
+  logic [AxiDataWidth-1:0] r_data_q;
+  logic [1:0] r_resp_q;
+  logic r_last_q;
+  logic b_stall_q;
+  logic [AxiIdWidth-1:0] b_id_q;
+  logic [1:0] b_resp_q;
+`endif
+
   // AR/AW admission is a combinational valid/ready boundary. The transaction
   // context owns the registers that capture a command on an admission fire.
   always_comb begin
@@ -287,6 +298,45 @@ module axi2chi_nocoh_slave #(
       end
     end
   end
+
+`ifndef SYNTHESIS
+  // AXI response payload is a cycle-to-cycle contract.  These checker-only
+  // registers sample an offered response at one rising edge and verify that
+  // the next edge observes the same payload if the AXI master stalled it.
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      r_stall_q <= 1'b0;
+      r_id_q <= '0;
+      r_data_q <= '0;
+      r_resp_q <= '0;
+      r_last_q <= 1'b0;
+      b_stall_q <= 1'b0;
+      b_id_q <= '0;
+      b_resp_q <= '0;
+    end else begin
+      if (r_stall_q) begin
+        assert (s_axi_rvalid && s_axi_rid == r_id_q &&
+                s_axi_rdata == r_data_q && s_axi_rresp == r_resp_q &&
+                s_axi_rlast == r_last_q)
+        else $fatal(1, "AXI R payload changed while RREADY was low");
+      end
+      if (b_stall_q) begin
+        assert (s_axi_bvalid && s_axi_bid == b_id_q &&
+                s_axi_bresp == b_resp_q)
+        else $fatal(1, "AXI B payload changed while BREADY was low");
+      end
+
+      r_stall_q <= s_axi_rvalid && !s_axi_rready;
+      r_id_q <= s_axi_rid;
+      r_data_q <= s_axi_rdata;
+      r_resp_q <= s_axi_rresp;
+      r_last_q <= s_axi_rlast;
+      b_stall_q <= s_axi_bvalid && !s_axi_bready;
+      b_id_q <= s_axi_bid;
+      b_resp_q <= s_axi_bresp;
+    end
+  end
+`endif
 
 endmodule
 
