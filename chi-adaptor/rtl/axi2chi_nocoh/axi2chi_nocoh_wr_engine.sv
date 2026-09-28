@@ -112,6 +112,11 @@ module axi2chi_nocoh_wr_engine #(
   logic [ChildIndexWidth-1:0] dbid_lane_q;
   logic txreq_is_full;
 
+`ifndef SYNTHESIS
+  logic txdat_stall_q;
+  logic [DatFlitWidth-1:0] txdat_payload_hold_q;
+`endif
+
   always_comb begin
     issue_lane_idx = '0;
     issue_lane_found = 1'b0;
@@ -331,6 +336,23 @@ module axi2chi_nocoh_wr_engine #(
     if (!rst && wr_fragment_fire) begin
       assert (w_lane_found)
       else $fatal(1, "Accepted write fragment has no WaitW engine lane");
+    end
+  end
+
+  // A CHI DAT sender samples its flit only on valid/ready.  Retain the
+  // previous offered flit in checker-only storage so a stalled transmitter
+  // cannot switch arbitration lanes or mutate DBID/DataID/data mid-transfer.
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      txdat_stall_q <= 1'b0;
+      txdat_payload_hold_q <= '0;
+    end else begin
+      if (txdat_stall_q) begin
+        assert (txdat_valid_o && txdat_payload_o == txdat_payload_hold_q)
+        else $fatal(1, "CHI TXDAT payload changed while TXDAT ready was low");
+      end
+      txdat_stall_q <= txdat_valid_o && !txdat_ready_i;
+      txdat_payload_hold_q <= txdat_payload_o;
     end
   end
 `endif
