@@ -510,6 +510,71 @@ module tb_axi2chi_nocoh_top_read;
     @(posedge clk);
     @(negedge clk);
 
+    // Unknown RXDAT must be consumed from the shared receive FIFO without
+    // creating an AXI response or mutating a transaction context.
+    chi_rxdat_flit_i = '0;
+    chi_rxdat_flit_i[8 +: ChiTxnidWidth] = {ChiTxnidWidth{1'b1}};
+    chi_rxdat_flit_i[24 +: DataIdWidth] = '0;
+    chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
+    chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'hface_face_face_face;
+    chi_rxdat_flitv_i = 1'b1;
+    #1;
+    `CHECK(chi_rxdat_lcrdv_o);
+    @(posedge clk);
+    @(negedge clk);
+    chi_rxdat_flitv_i = 1'b0;
+    repeat (3) begin @(posedge clk); @(negedge clk); end
+    `CHECK(dut.unknown_rxdat_count_q == 32'd1);
+    `CHECK(!s_axi_rvalid);
+
+    // A matching RXDAT response error is retained by rd_data and appears as
+    // AXI SLVERR only when the assembled beat becomes visible.
+    s_axi_arid = 2'd0;
+    s_axi_araddr = 32'h0000_1200;
+    s_axi_arlen = '0;
+    s_axi_arsize = 3'd3;
+    s_axi_arburst = 2'b01;
+    s_axi_arvalid = 1'b1;
+    s_axi_rready = 1'b0;
+    #1;
+    `CHECK(s_axi_arready);
+    @(posedge clk);
+    @(negedge clk);
+    s_axi_arvalid = 1'b0;
+    repeat (4) begin
+      if (!chi_txreq_flitv_o) begin
+        @(posedge clk);
+        @(negedge clk);
+      end
+    end
+    #1;
+    `CHECK(chi_txreq_flitv_o);
+    chi_rxdat_flit_i = '0;
+    chi_rxdat_flit_i[8 +: ChiTxnidWidth] =
+        chi_txreq_flit_o[16 +: ChiTxnidWidth];
+    chi_rxdat_flit_i[24 +: DataIdWidth] = '0;
+    chi_rxdat_flit_i[27 +: 2] = 2'b10;
+    chi_rxdat_flit_i[32 +: (ChiDataWidth / 8)] = 8'hff;
+    chi_rxdat_flit_i[64 +: ChiDataWidth] = 64'hbad0_bad0_bad0_bad0;
+    chi_txreq_lcrdv_i = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+    chi_txreq_lcrdv_i = 1'b0;
+    chi_rxdat_flitv_i = 1'b1;
+    #1;
+    `CHECK(chi_rxdat_lcrdv_o);
+    @(posedge clk);
+    @(negedge clk);
+    chi_rxdat_flitv_i = 1'b0;
+    repeat (4) begin
+      if (!s_axi_rvalid) begin @(posedge clk); @(negedge clk); end
+    end
+    #1;
+    `CHECK(s_axi_rvalid && s_axi_rid == 2'd0 && s_axi_rresp == 2'b10);
+    s_axi_rready = 1'b1;
+    @(posedge clk);
+    @(negedge clk);
+
     $display("PASS: top-level AXI read including FIXED and cross-line fragments");
     $finish;
   end
