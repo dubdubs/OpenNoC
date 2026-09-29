@@ -222,12 +222,18 @@ module axi2chi_nocoh_rd_data #(
             fragment_idx_i == 0) begin
           response_q[fragment_parent_idx_i].valid <= 1'b1;
           response_q[fragment_parent_idx_i].axi_id <= fragment_axi_id_i;
-          response_q[fragment_parent_idx_i].data <= mapped_data;
+          // fragment_idx identifies a cache-line fragment, not a CHI DataID
+          // segment.  The final DataID must therefore merge with all prior
+          // segments already retained in the parent assembly storage.
+          response_q[fragment_parent_idx_i].data <=
+              assembly_q[fragment_parent_idx_i].data | mapped_data;
           response_q[fragment_parent_idx_i].resp <=
-              (fragment_resp_i[1] || child_missing_data) ? 2'b10 : 2'b00;
+              assembly_q[fragment_parent_idx_i].resp |
+              ((fragment_resp_i[1] || child_missing_data) ? 2'b10 : 2'b00);
           response_q[fragment_parent_idx_i].last <= fragment_last_i;
           response_q[fragment_parent_idx_i].child_idx <= fragment_child_idx_i;
           response_q[fragment_parent_idx_i].axi_beat <= fragment_axi_beat_i;
+          assembly_q[fragment_parent_idx_i] <= '0;
         end else if (child_segments_complete && fragment_last_fragment_i) begin
           response_q[fragment_parent_idx_i].valid <= 1'b1;
           response_q[fragment_parent_idx_i].axi_id <= fragment_axi_id_i;
