@@ -144,6 +144,24 @@ module tb_axi2chi_nocoh_wr_engine;
     #1;
     `CHECK(wr_fragment_ready_o);
     wr_fragment_payload_i = 128'h0123_4567_89ab_cdef_feed_face_cafe_beef;
+    wr_fragment_last_i = 1'b0;
+    wr_fragment_valid_i = 1'b1;
+    @(posedge clk);
+
+    @(negedge clk);
+    wr_fragment_valid_i = 1'b0;
+    #1;
+    `CHECK(txdat_valid_o);
+    `CHECK(txdat_payload_o[24 +: ChiDbidWidth] == 4'hc);
+    txdat_ready_i = 1'b1;
+    @(posedge clk);
+
+    @(negedge clk);
+    txdat_ready_i = 1'b0;
+    #1;
+    `CHECK(wr_fragment_ready_o);
+    wr_fragment_payload_i = 128'hf0e1_d2c3_b4a5_9687_7869_5a4b_3c2d_1e0f;
+    wr_fragment_last_i = 1'b1;
     wr_fragment_valid_i = 1'b1;
     @(posedge clk);
 
