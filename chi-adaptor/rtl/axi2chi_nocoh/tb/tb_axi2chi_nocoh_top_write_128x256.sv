@@ -3,11 +3,12 @@
 `define CHECK(c) if (!(c)) $fatal(1, "CHECK failed: %s", `"c`")
 module tb_axi2chi_nocoh_top_write_128x256 #(
   parameter int unsigned AxiDataWidth = 128,
-  parameter int unsigned ChiDataWidth = 256
+  parameter int unsigned ChiDataWidth = 256,
+  parameter int unsigned DatFlitWidth = ChiDataWidth + 128
 );
   localparam int unsigned AxiAddrWidth=32, AxiIdWidth=2;
   localparam int unsigned ChiTxnidWidth=8, ChiDbidWidth=8;
-  localparam int unsigned ReqFlitWidth=128, RspFlitWidth=64, DatFlitWidth=384;
+  localparam int unsigned ReqFlitWidth=128, RspFlitWidth=64;
   localparam int unsigned ParentEntries=4, ChildEntries=4;
   logic clk=0, aresetn=0;
   logic [AxiIdWidth-1:0] s_axi_awid,s_axi_bid,s_axi_arid,s_axi_rid;

@@ -6,7 +6,8 @@
 module tb_axi2chi_nocoh_top_read_128x256 #(
   parameter int unsigned CacheLineBytes = 64,
   parameter int unsigned AxiDataWidth = 128,
-  parameter int unsigned ChiDataWidth = 256
+  parameter int unsigned ChiDataWidth = 256,
+  parameter int unsigned DatFlitWidth = ChiDataWidth + 128
 );
   localparam int unsigned AxiAddrWidth = 32;
   localparam int unsigned AxiIdWidth = 2;
@@ -14,7 +15,6 @@ module tb_axi2chi_nocoh_top_read_128x256 #(
   localparam int unsigned ChiDbidWidth = 8;
   localparam int unsigned ReqFlitWidth = 128;
   localparam int unsigned RspFlitWidth = 64;
-  localparam int unsigned DatFlitWidth = 384;
   localparam int unsigned ParentEntries = 4;
   localparam int unsigned ChildEntries = 4;
   localparam int unsigned DataIdWidth =
