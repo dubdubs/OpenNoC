@@ -5,13 +5,13 @@
 
 module tb_axi2chi_nocoh_top_read_128x256 #(
   parameter int unsigned CacheLineBytes = 64,
-  parameter int unsigned AxiDataWidth = 128
+  parameter int unsigned AxiDataWidth = 128,
+  parameter int unsigned ChiDataWidth = 256
 );
   localparam int unsigned AxiAddrWidth = 32;
   localparam int unsigned AxiIdWidth = 2;
   localparam int unsigned ChiTxnidWidth = 8;
   localparam int unsigned ChiDbidWidth = 8;
-  localparam int unsigned ChiDataWidth = 256;
   localparam int unsigned ReqFlitWidth = 128;
   localparam int unsigned RspFlitWidth = 64;
   localparam int unsigned DatFlitWidth = 384;
@@ -97,8 +97,8 @@ module tb_axi2chi_nocoh_top_read_128x256 #(
     `CHECK(s_axi_rvalid && s_axi_rid == 2'd1 && s_axi_rresp == 2'b00 && s_axi_rlast);
     `CHECK(s_axi_rdata == expected_rdata);
     s_axi_rready = 1'b1; @(posedge clk);
-    $display("PASS: top read AXI=%0db CHI=256b, line=%0dB", AxiDataWidth,
-             CacheLineBytes);
+    $display("PASS: top read AXI=%0db CHI=%0db, line=%0dB", AxiDataWidth,
+             ChiDataWidth, CacheLineBytes);
     $finish;
   end
 endmodule

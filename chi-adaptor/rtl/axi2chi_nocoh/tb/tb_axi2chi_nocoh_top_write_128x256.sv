@@ -2,10 +2,11 @@
 `default_nettype none
 `define CHECK(c) if (!(c)) $fatal(1, "CHECK failed: %s", `"c`")
 module tb_axi2chi_nocoh_top_write_128x256 #(
-  parameter int unsigned AxiDataWidth = 128
+  parameter int unsigned AxiDataWidth = 128,
+  parameter int unsigned ChiDataWidth = 256
 );
   localparam int unsigned AxiAddrWidth=32, AxiIdWidth=2;
-  localparam int unsigned ChiTxnidWidth=8, ChiDbidWidth=8, ChiDataWidth=256;
+  localparam int unsigned ChiTxnidWidth=8, ChiDbidWidth=8;
   localparam int unsigned ReqFlitWidth=128, RspFlitWidth=64, DatFlitWidth=384;
   localparam int unsigned ParentEntries=4, ChildEntries=4;
   logic clk=0, aresetn=0;
@@ -46,7 +47,7 @@ module tb_axi2chi_nocoh_top_write_128x256 #(
     chi_txdat_lcrdv_i=1;@(posedge clk);@(negedge clk);chi_txdat_lcrdv_i=0;rsp=0;rsp[3:0]=4'h3;send_rsp(rsp);
     repeat(4) begin if(!s_axi_bvalid) begin @(posedge clk);@(negedge clk);end end
     #1;`CHECK(s_axi_bvalid&&s_axi_bid==2'd1&&s_axi_bresp==2'b00);s_axi_bready=1;@(posedge clk);
-    $display("PASS: top write AXI=%0db CHI=256b smoke", AxiDataWidth);$finish;
+    $display("PASS: top write AXI=%0db CHI=%0db smoke", AxiDataWidth, ChiDataWidth);$finish;
   end
 endmodule
 `default_nettype wire
