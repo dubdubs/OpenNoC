@@ -56,8 +56,7 @@ module axi2chi_nocoh_rd_engine #(
     kRdAlloc,
     kRdIssueReq,
     kRdWaitDat,
-    kRdCommitData,
-    kRdWaitRetire
+    kRdCommitData
   } rd_state_t;
 
   rd_state_t state_q [ChildEntries];
@@ -78,8 +77,6 @@ module axi2chi_nocoh_rd_engine #(
   logic rxdat_lane_found;
   logic [$clog2(ChildEntries)-1:0] fragment_lane_idx;
   logic fragment_lane_found;
-  logic [$clog2(ChildEntries)-1:0] event_lane_idx;
-  logic event_lane_found;
   logic [ChiTxnidWidth-1:0] rxdat_txnid;
   logic issue_fire;
   logic alloc_fire;
@@ -98,8 +95,6 @@ module axi2chi_nocoh_rd_engine #(
     rxdat_lane_found = 1'b0;
     fragment_lane_idx = '0;
     fragment_lane_found = 1'b0;
-    event_lane_idx = '0;
-    event_lane_found = 1'b0;
     rxdat_txnid = rxdat_payload_i[8 +: ChiTxnidWidth];
     for (int unsigned idx = 0; idx < ChildEntries; idx++) begin
       if (state_q[idx] == kRdIdle && !issue_lane_found) begin
@@ -123,10 +118,6 @@ module axi2chi_nocoh_rd_engine #(
         fragment_lane_idx = ChildIndexWidth'(idx);
         fragment_lane_found = 1'b1;
       end
-      if (state_q[idx] == kRdWaitRetire && !event_lane_found) begin
-        event_lane_idx = ChildIndexWidth'(idx);
-        event_lane_found = 1'b1;
-      end
     end
 
     rd_issue_ready_o = 1'b0;
@@ -136,7 +127,7 @@ module axi2chi_nocoh_rd_engine #(
     child_alloc_axi_beat_o = axi_beat_q[alloc_lane_idx];
     child_alloc_frag_idx_o = frag_idx_q[alloc_lane_idx];
     child_event_valid_o = 1'b0;
-    child_event_idx_o = child_q[event_lane_idx];
+    child_event_idx_o = '0;
     child_event_type_o = 3'd0;
     txreq_valid_o = 1'b0;
     txreq_payload_o = '0;
@@ -217,8 +208,7 @@ module axi2chi_nocoh_rd_engine #(
 
       if (rd_child_complete_valid_i) begin
         for (int unsigned idx = 0; idx < ChildEntries; idx++) begin
-          if ((state_q[idx] == kRdWaitDat ||
-               state_q[idx] == kRdWaitRetire) &&
+          if (state_q[idx] == kRdWaitDat &&
               child_q[idx] == rd_child_complete_idx_i) begin
             state_q[idx] <= kRdIdle;
           end

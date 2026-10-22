@@ -2,6 +2,7 @@
 `default_nettype none
 `define CHECK(c) if (!(c)) $fatal(1, "CHECK failed: %s", `"c`")
 module tb_axi2chi_nocoh_top_write_128x256 #(
+  parameter int unsigned CacheLineBytes = 64,
   parameter int unsigned AxiDataWidth = 128,
   parameter int unsigned ChiDataWidth = 256,
   parameter int unsigned DatFlitWidth = ChiDataWidth + 128
@@ -26,7 +27,7 @@ module tb_axi2chi_nocoh_top_write_128x256 #(
   logic chi_rxdat_flitv_i,chi_rxdat_lcrdv_o; logic [DatFlitWidth-1:0] chi_rxdat_flit_i;
   logic chi_txlinkactivereq_o,chi_txlinkactiveack_i,chi_rxlinkactivereq_i,chi_rxlinkactiveack_o;
   logic [RspFlitWidth-1:0] rsp;
-  axi2chi_nocoh_top #(.AxiAddrWidth(AxiAddrWidth),.AxiDataWidth(AxiDataWidth),.AxiIdWidth(AxiIdWidth),.ChiTxnidWidth(ChiTxnidWidth),.ChiDbidWidth(ChiDbidWidth),.ChiDataWidth(ChiDataWidth),.ParentEntries(ParentEntries),.ChildEntries(ChildEntries),.ReqFlitWidth(ReqFlitWidth),.RspFlitWidth(RspFlitWidth),.DatFlitWidth(DatFlitWidth)) dut (.*);
+  axi2chi_nocoh_top #(.AxiAddrWidth(AxiAddrWidth),.AxiDataWidth(AxiDataWidth),.AxiIdWidth(AxiIdWidth),.ChiTxnidWidth(ChiTxnidWidth),.ChiDbidWidth(ChiDbidWidth),.ChiDataWidth(ChiDataWidth),.CacheLineBytes(CacheLineBytes),.ParentEntries(ParentEntries),.ChildEntries(ChildEntries),.ReqFlitWidth(ReqFlitWidth),.RspFlitWidth(RspFlitWidth),.DatFlitWidth(DatFlitWidth)) dut (.*);
   always #5 clk=~clk;
   task automatic send_rsp(input logic [RspFlitWidth-1:0] p);
     begin chi_rxrsp_flit_i=p; chi_rxrsp_flitv_i=1; #1; `CHECK(chi_rxrsp_lcrdv_o); @(posedge clk); @(negedge clk); chi_rxrsp_flitv_i=0; end
@@ -48,7 +49,8 @@ module tb_axi2chi_nocoh_top_write_128x256 #(
     chi_txdat_lcrdv_i=1;@(posedge clk);@(negedge clk);chi_txdat_lcrdv_i=0;rsp=0;rsp[3:0]=4'h3;send_rsp(rsp);
     repeat(4) begin if(!s_axi_bvalid) begin @(posedge clk);@(negedge clk);end end
     #1;`CHECK(s_axi_bvalid&&s_axi_bid==2'd1&&s_axi_bresp==2'b00);s_axi_bready=1;@(posedge clk);
-    $display("PASS: top write AXI=%0db CHI=%0db smoke", AxiDataWidth, ChiDataWidth);$finish;
+    $display("PASS: top write AXI=%0db CHI=%0db, line=%0dB", AxiDataWidth,
+             ChiDataWidth, CacheLineBytes);$finish;
   end
 endmodule
 `default_nettype wire
