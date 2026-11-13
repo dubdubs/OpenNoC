@@ -1,0 +1,7 @@
+/out/
+*.vcd
+*.fsdb
+*.wlf
+transcript
+work/
+*.key

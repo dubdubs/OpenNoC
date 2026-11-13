@@ -1,0 +1,37 @@
+# kind	name	top	tb_sources	pass_or_fatal_regex	extra_sources
+positive	chi_transport_leaf	tb_axi2chi_chi_transport_leaf	tb/tb_axi2chi_chi_transport_leaf.sv	PASS: CHI transport leaf credit and FIFO flow	-
+positive	chi_link	tb_axi2chi_chi_link	tb/tb_axi2chi_chi_link.sv	PASS: CHI link active and transport integration	-
+positive	chi_codec	tb_axi2chi_nocoh_chi_codec	tb/tb_axi2chi_nocoh_chi_codec.sv	PASS: CHI codec field packing and unpacking	-
+positive	fragment	tb_axi2chi_nocoh_fragment	tb/tb_axi2chi_nocoh_fragment.sv	PASS: AXI beat fragment geometry	-
+positive	wr_byte_map	tb_axi2chi_nocoh_wr_byte_map	tb/tb_axi2chi_nocoh_wr_byte_map.sv	PASS: write byte-lane fragment mapping	-
+positive	rd_byte_map	tb_axi2chi_nocoh_rd_byte_map	tb/tb_axi2chi_nocoh_rd_byte_map.sv	PASS: read fragment byte-lane mapping	-
+positive	rd_data	tb_axi2chi_nocoh_rd_data	tb/tb_axi2chi_nocoh_rd_data.sv	PASS: read data fragment to AXI R response	-
+positive	rd_data_256x128	tb_axi2chi_nocoh_rd_data_256x128	tb/tb_axi2chi_nocoh_rd_data_256x128.sv	PASS: rd_data 256b AXI assembly from two 128b DataIDs	-
+positive	wr_data	tb_axi2chi_nocoh_wr_data	tb/tb_axi2chi_nocoh_wr_data.sv	PASS: write data beat to TXDAT fragment	-
+positive	wr_data_256x128	tb_axi2chi_nocoh_wr_data_256x128	tb/tb_axi2chi_nocoh_wr_data_256x128.sv	PASS: wr_data 256b AXI to two 128b TXDAT DataIDs	-
+positive	rd_engine	tb_axi2chi_nocoh_rd_engine	tb/tb_axi2chi_nocoh_rd_engine.sv	PASS: read engine single child flow	-
+positive	wr_engine	tb_axi2chi_nocoh_wr_engine	tb/tb_axi2chi_nocoh_wr_engine.sv	PASS: write engine DBIDResp and CompDBIDResp flows	-
+positive	slave_admission	tb_axi2chi_nocoh_slave_admission	tb/tb_axi2chi_nocoh_slave_admission.sv	PASS: admission, WRAP rejection, and lane-aware WSTRB checks	-
+positive	txn_ctx_parent	tb_axi2chi_nocoh_txn_ctx_parent	tb/tb_axi2chi_nocoh_txn_ctx_parent.sv	PASS: parent context allocation, arbitration, and release	-
+positive	txn_ctx_child	tb_axi2chi_nocoh_txn_ctx_child	tb/tb_axi2chi_nocoh_txn_ctx_child.sv	PASS: child context and TxnID allocation/release	-
+positive	top_link	tb_axi2chi_nocoh_top_link	tb/tb_axi2chi_nocoh_top_link.sv	PASS: top-level CHI link integration shell	-
+positive	top_read	tb_axi2chi_nocoh_top_read	tb/tb_axi2chi_nocoh_top_read.sv	PASS: top-level AXI read including FIXED and cross-line fragments	-
+positive	top_read_32x128	tb_axi2chi_nocoh_top_read_32x128	tb/tb_axi2chi_nocoh_top_read_128x256.sv,tb/tb_axi2chi_nocoh_top_read_32x128.sv	PASS: top read AXI=32b CHI=128b, line=64B	-
+positive	top_read_64x256	tb_axi2chi_nocoh_top_read_64x256	tb/tb_axi2chi_nocoh_top_read_128x256.sv,tb/tb_axi2chi_nocoh_top_read_64x256.sv	PASS: top read AXI=64b CHI=256b, line=64B	-
+positive	top_read_128x256	tb_axi2chi_nocoh_top_read_128x256	tb/tb_axi2chi_nocoh_top_read_128x256.sv	PASS: top read AXI=128b CHI=256b, line=64B	-
+positive	top_read_256x512	tb_axi2chi_nocoh_top_read_256x512	tb/tb_axi2chi_nocoh_top_read_128x256.sv,tb/tb_axi2chi_nocoh_top_read_256x512.sv	PASS: top read AXI=256b CHI=512b, line=64B	-
+positive	top_write	tb_axi2chi_nocoh_top_write	tb/tb_axi2chi_nocoh_top_write.sv	PASS: top-level AXI write, including FIXED and cross-line bursts	-
+positive	top_write_8x128	tb_axi2chi_nocoh_top_write_8x128	tb/tb_axi2chi_nocoh_top_write_128x256.sv,tb/tb_axi2chi_nocoh_top_write_8x128.sv	PASS: top write AXI=8b CHI=128b, line=64B	-
+positive	top_write_32x128	tb_axi2chi_nocoh_top_write_32x128	tb/tb_axi2chi_nocoh_top_write_128x256.sv,tb/tb_axi2chi_nocoh_top_write_32x128.sv	PASS: top write AXI=32b CHI=128b, line=64B	-
+positive	top_write_64x256	tb_axi2chi_nocoh_top_write_64x256	tb/tb_axi2chi_nocoh_top_write_128x256.sv,tb/tb_axi2chi_nocoh_top_write_64x256.sv	PASS: top write AXI=64b CHI=256b, line=64B	-
+positive	top_write_128x256	tb_axi2chi_nocoh_top_write_128x256	tb/tb_axi2chi_nocoh_top_write_128x256.sv	PASS: top write AXI=128b CHI=256b, line=64B	-
+positive	top_write_256x512	tb_axi2chi_nocoh_top_write_256x512	tb/tb_axi2chi_nocoh_top_write_128x256.sv,tb/tb_axi2chi_nocoh_top_write_256x512.sv	PASS: top write AXI=256b CHI=512b, line=64B	-
+positive	top_read_l32	tb_axi2chi_nocoh_top_read_l32	tb/tb_axi2chi_nocoh_top_read_128x256.sv,tb/tb_axi2chi_nocoh_cacheline_profiles.sv	PASS: top read AXI=128b CHI=256b, line=32B	-
+positive	top_read_l128	tb_axi2chi_nocoh_top_read_l128	tb/tb_axi2chi_nocoh_top_read_128x256.sv,tb/tb_axi2chi_nocoh_cacheline_profiles.sv	PASS: top read AXI=128b CHI=256b, line=128B	-
+positive	top_write_l32	tb_axi2chi_nocoh_top_write_l32	tb/tb_axi2chi_nocoh_top_write_128x256.sv,tb/tb_axi2chi_nocoh_cacheline_profiles.sv	PASS: top write AXI=128b CHI=256b, line=32B	-
+positive	top_write_l128	tb_axi2chi_nocoh_top_write_l128	tb/tb_axi2chi_nocoh_top_write_128x256.sv,tb/tb_axi2chi_nocoh_cacheline_profiles.sv	PASS: top write AXI=128b CHI=256b, line=128B	-
+positive	profile_elaboration	tb_axi2chi_nocoh_profile_elaboration	tb/tb_axi2chi_nocoh_profile_elaboration.sv	PASS: all 38 legal AXI/CHI/cache-line profiles elaborate	-
+negative	invalid_axi_geometry	tb_invalid_axi_geometry	tb/tb_axi2chi_nocoh_invalid_profiles.sv	CacheLineBytes must be an integer number of AXI beats	-
+negative	invalid_chi_geometry	tb_invalid_chi_geometry	tb/tb_axi2chi_nocoh_invalid_profiles.sv	CacheLineBytes must be an integer number of CHI data segments	-
+negative	invalid_cache_line	tb_invalid_cache_line	tb/tb_axi2chi_nocoh_invalid_profiles.sv	CacheLineBytes must be 32, 64, or 128	-
+negative	invalid_line_divisibility	tb_invalid_line_divisibility	tb/tb_axi2chi_nocoh_invalid_profiles.sv	CacheLineBytes must be an integer number of AXI beats	-
