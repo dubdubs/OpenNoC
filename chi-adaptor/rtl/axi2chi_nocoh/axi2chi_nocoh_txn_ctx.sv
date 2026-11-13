@@ -195,26 +195,52 @@ module axi2chi_nocoh_txn_ctx #(
   logic [BeatCountWidth-1:0] parent_expected_beat_count;
   logic [AxiAddrWidth-1:0] child_alloc_beat_bytes;
   logic [AxiAddrWidth-1:0] child_alloc_beat_addr;
+  logic [AxiAddrWidth-1:0] child_alloc_lane_offset;
   logic [AxiAddrWidth-1:0] child_alloc_line_remaining;
   logic [AxiAddrWidth-1:0] child_alloc_fragment_bytes;
+  logic [AxiAddrWidth-1:0] child_lookup_beat_bytes;
+  logic [AxiAddrWidth-1:0] child_event_beat_bytes;
   logic rd_issue_crosses_line;
+  logic wr_issue_crosses_line;
   logic child_event_crosses_line;
 
   // The frozen profile supports only FIXED and INCR.  Admission owns rejection
   // of unsupported burst encodings; an admitted command is therefore either
-  // FIXED or INCR, and this datapath does not encode WRAP behavior.
+  // FIXED or INCR, and this datapath does not encode WRAP behavior.  AXI keeps
+  // an unaligned INCR address for beat zero, then advances from the transfer-
+  // size aligned address for subsequent beats.
   function automatic logic [AxiAddrWidth-1:0] axi_beat_addr(
       input logic [AxiAddrWidth-1:0] start_addr,
       input logic [AxsizeWidth-1:0] size,
       input logic [1:0] burst,
       input logic [BeatIndexWidth-1:0] beat_idx);
     logic [AxiAddrWidth-1:0] advanced_addr;
+    logic [AxiAddrWidth-1:0] aligned_addr;
     begin
-      advanced_addr = start_addr + (AxiAddrWidth'(beat_idx) << size);
+      aligned_addr = (start_addr >> size) << size;
+      advanced_addr = aligned_addr + (AxiAddrWidth'(beat_idx) << size);
       unique case (burst)
         2'b00: axi_beat_addr = start_addr;
-        default: axi_beat_addr = advanced_addr;
+        default: axi_beat_addr = beat_idx == 0 ? start_addr : advanced_addr;
       endcase
+    end
+  endfunction
+
+  function automatic logic [AxiAddrWidth-1:0] axi_beat_bytes(
+      input logic [AxiAddrWidth-1:0] start_addr,
+      input logic [AxsizeWidth-1:0] size,
+      input logic [1:0] burst,
+      input logic [BeatIndexWidth-1:0] beat_idx);
+    logic [AxiAddrWidth-1:0] aligned_addr;
+    logic [AxiAddrWidth-1:0] transfer_bytes;
+    begin
+      aligned_addr = (start_addr >> size) << size;
+      transfer_bytes = AxiAddrWidth'(1) << size;
+      if ((beat_idx == 0) || (burst == 2'b00)) begin
+        axi_beat_bytes = transfer_bytes - (start_addr - aligned_addr);
+      end else begin
+        axi_beat_bytes = transfer_bytes;
+      end
     end
   endfunction
 
@@ -286,8 +312,19 @@ module axi2chi_nocoh_txn_ctx #(
             AxiDataWidth / 8 == CacheLineBytes;
       end
     end
-    rd_issue_crosses_line = (rd_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) +
-        (AxiAddrWidth'(1) << parent_q[rd_issue_parent_idx_o].size) >
+    rd_issue_crosses_line =
+        (rd_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) +
+        axi_beat_bytes(parent_q[rd_issue_parent_idx_o].start_addr,
+                       parent_q[rd_issue_parent_idx_o].size,
+                       parent_q[rd_issue_parent_idx_o].burst,
+                       rd_issue_axi_beat_o) >
+        AxiAddrWidth'(CacheLineBytes);
+    wr_issue_crosses_line =
+        (wr_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) +
+        axi_beat_bytes(parent_q[wr_issue_parent_idx_o].start_addr,
+                       parent_q[wr_issue_parent_idx_o].size,
+                       parent_q[wr_issue_parent_idx_o].burst,
+                       wr_issue_axi_beat_o) >
         AxiAddrWidth'(CacheLineBytes);
     child_alloc_idx = '0;
     child_free_found = 1'b0;
@@ -390,6 +427,7 @@ module axi2chi_nocoh_txn_ctx #(
     child_lookup_axi_byte_offset_o = '0;
     child_lookup_line_byte_offset_o = '0;
     child_lookup_fragment_byte_count_o = '0;
+    child_lookup_beat_bytes = '0;
     parent_lookup_axi_id_o = '0;
     if (!rst && parent_lookup_valid_i && parent_q[parent_lookup_idx_i].valid) begin
       parent_lookup_axi_id_o = parent_q[parent_lookup_idx_i].axi_id;
@@ -405,10 +443,15 @@ module axi2chi_nocoh_txn_ctx #(
           parent_q[child_q[child_lookup_idx_i].parent_idx].len;
       child_lookup_axi_beat_o = child_q[child_lookup_idx_i].axi_beat_idx;
       child_lookup_frag_idx_o = child_q[child_lookup_idx_i].frag_idx;
+      child_lookup_beat_bytes = axi_beat_bytes(
+          parent_q[child_q[child_lookup_idx_i].parent_idx].start_addr,
+          parent_q[child_q[child_lookup_idx_i].parent_idx].size,
+          parent_q[child_q[child_lookup_idx_i].parent_idx].burst,
+          child_q[child_lookup_idx_i].axi_beat_idx);
       child_lookup_last_fragment_o = child_q[child_lookup_idx_i].frag_idx != 0 ||
           ((child_q[child_lookup_idx_i].addr &
           AxiAddrWidth'(CacheLineBytes - 1)) +
-          (AxiAddrWidth'(1) << parent_q[child_q[child_lookup_idx_i].parent_idx].size)
+          child_lookup_beat_bytes
           <= AxiAddrWidth'(CacheLineBytes));
       child_lookup_axi_byte_offset_o =
           child_q[child_lookup_idx_i].axi_byte_offset;
@@ -437,8 +480,11 @@ module axi2chi_nocoh_txn_ctx #(
         parent_q[child_event_parent_idx].completed_beat_count + BeatCountWidth'(1);
     parent_expected_beat_count =
         BeatCountWidth'(parent_q[child_event_parent_idx].len) + BeatCountWidth'(1);
-    child_alloc_beat_bytes = AxiAddrWidth'(1) <<
-        parent_q[child_alloc_parent_idx_i].size;
+    child_alloc_beat_bytes = axi_beat_bytes(
+        parent_q[child_alloc_parent_idx_i].start_addr,
+        parent_q[child_alloc_parent_idx_i].size,
+        parent_q[child_alloc_parent_idx_i].burst,
+        child_alloc_axi_beat_i);
     child_alloc_beat_addr = axi_beat_addr(
         parent_q[child_alloc_parent_idx_i].start_addr,
         parent_q[child_alloc_parent_idx_i].size,
@@ -446,23 +492,36 @@ module axi2chi_nocoh_txn_ctx #(
         child_alloc_axi_beat_i);
     child_alloc_line_remaining = AxiAddrWidth'(CacheLineBytes) -
         (child_alloc_beat_addr & AxiAddrWidth'(CacheLineBytes - 1));
+    child_alloc_lane_offset = child_alloc_beat_addr &
+        AxiAddrWidth'(AxiDataWidth / 8 - 1);
     if (child_alloc_frag_idx_i == 0) begin
-      child_alloc_fragment_bytes = child_alloc_beat_bytes > child_alloc_line_remaining ?
-          child_alloc_line_remaining : child_alloc_beat_bytes;
+      child_alloc_fragment_bytes =
+          child_alloc_beat_bytes > child_alloc_line_remaining ?
+          child_alloc_line_remaining :
+          child_alloc_beat_bytes;
     end else begin
       child_alloc_fragment_bytes = child_alloc_beat_bytes - child_alloc_line_remaining;
     end
     child_alloc_last_fragment_o = child_alloc_frag_idx_i != 0 ||
         child_alloc_beat_bytes <= child_alloc_line_remaining;
-    child_alloc_axi_byte_offset_o = child_alloc_frag_idx_i == 0 ? '0 :
-        AxiByteCountWidth'(child_alloc_line_remaining);
+    child_alloc_axi_byte_offset_o = AxiByteCountWidth'(child_alloc_lane_offset);
+    if (child_alloc_frag_idx_i != 0) begin
+      child_alloc_axi_byte_offset_o =
+          AxiByteCountWidth'(child_alloc_lane_offset +
+                             child_alloc_line_remaining);
+    end
     child_alloc_line_byte_offset_o = child_alloc_frag_idx_i == 0 ?
         child_alloc_beat_addr[LineOffsetWidth-1:0] : '0;
     child_alloc_fragment_byte_count_o =
         AxiByteCountWidth'(child_alloc_fragment_bytes);
+    child_event_beat_bytes = axi_beat_bytes(
+        parent_q[child_event_parent_idx].start_addr,
+        parent_q[child_event_parent_idx].size,
+        parent_q[child_event_parent_idx].burst,
+        child_q[child_event_idx_i].axi_beat_idx);
     child_event_crosses_line =
         (child_q[child_event_idx_i].addr & AxiAddrWidth'(CacheLineBytes - 1)) +
-        (AxiAddrWidth'(1) << parent_q[child_event_parent_idx].size) >
+        child_event_beat_bytes >
         AxiAddrWidth'(CacheLineBytes);
     child_event_parent_idx_o = child_event_parent_idx;
     child_event_parent_complete_o = child_beat_completion_new &&
@@ -578,8 +637,8 @@ module axi2chi_nocoh_txn_ctx #(
         child_q[child_alloc_idx].axi_beat_idx <= child_alloc_axi_beat_i;
         child_q[child_alloc_idx].frag_idx <= child_alloc_frag_idx_i;
         child_q[child_alloc_idx].addr <= child_alloc_addr_i;
-        child_q[child_alloc_idx].axi_byte_offset <= child_alloc_frag_idx_i == 0 ?
-            '0 : AxiByteCountWidth'(child_alloc_line_remaining);
+        child_q[child_alloc_idx].axi_byte_offset <=
+            child_alloc_axi_byte_offset_o;
         child_q[child_alloc_idx].line_byte_offset <= child_alloc_frag_idx_i == 0 ?
             child_alloc_addr_i[LineOffsetWidth-1:0] : '0;
         child_q[child_alloc_idx].fragment_byte_count <=
@@ -609,9 +668,7 @@ module axi2chi_nocoh_txn_ctx #(
       end
 
       if (wr_issue_fire) begin
-        if ((wr_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) +
-            (AxiAddrWidth'(1) << parent_q[wr_issue_parent_idx_o].size) >
-            AxiAddrWidth'(CacheLineBytes) && wr_issue_frag_idx_o == 0) begin
+        if (wr_issue_crosses_line && wr_issue_frag_idx_o == 0) begin
           parent_q[wr_issue_parent_idx_o].next_issue_frag <= 2'd1;
         end else begin
           parent_q[wr_issue_parent_idx_o].next_issue_beat <=
@@ -621,9 +678,7 @@ module axi2chi_nocoh_txn_ctx #(
         parent_q[wr_issue_parent_idx_o].all_children_issued <=
             parent_q[wr_issue_parent_idx_o].next_issue_beat ==
             parent_q[wr_issue_parent_idx_o].len &&
-            (!((wr_issue_addr_o & AxiAddrWidth'(CacheLineBytes - 1)) +
-            (AxiAddrWidth'(1) << parent_q[wr_issue_parent_idx_o].size) >
-            AxiAddrWidth'(CacheLineBytes)) || wr_issue_frag_idx_o != 0);
+            (!wr_issue_crosses_line || wr_issue_frag_idx_o != 0);
       end
 
       if (child_release_fire) begin

@@ -76,6 +76,9 @@ module axi2chi_nocoh_slave #(
 );
 
   localparam int unsigned ParentIndexWidth = $clog2(ParentEntries);
+  localparam int unsigned DataBytes = AxiDataWidth / 8;
+  localparam int unsigned DataByteOffsetWidth =
+      (DataBytes > 1) ? $clog2(DataBytes) : 1;
   typedef struct packed {
     logic valid;
     logic local_error;
@@ -83,6 +86,8 @@ module axi2chi_nocoh_slave #(
     logic [AxiIdWidth-1:0] axi_id;
     logic [AxlenWidth-1:0] len;
     logic [AxsizeWidth-1:0] size;
+    logic [AxiAddrWidth-1:0] addr;
+    logic [1:0] burst;
   } aw_order_entry_t;
 
   aw_order_entry_t aw_order_q [ParentEntries];
@@ -95,6 +100,11 @@ module axi2chi_nocoh_slave #(
   logic wr_beat_fire;
   logic active_w_expected_last;
   logic [AxiDataWidth / 8-1:0] active_w_legal_strb;
+  logic [AxiAddrWidth-1:0] active_w_addr;
+  logic [AxiAddrWidth-1:0] active_w_aligned_addr;
+  logic [AxiAddrWidth-1:0] active_w_bytes;
+  logic [DataByteOffsetWidth-1:0] active_w_lane;
+  logic active_w_size_error;
   logic local_rd_valid_q;
   logic [AxiIdWidth-1:0] local_rd_id_q;
   logic [AxlenWidth-1:0] local_rd_len_q;
@@ -158,10 +168,35 @@ module axi2chi_nocoh_slave #(
 
     active_w_expected_last =
         active_w_beat_count_q == aw_order_q[aw_order_rd_ptr_q].len;
+    active_w_addr = aw_order_q[aw_order_rd_ptr_q].addr;
+    active_w_aligned_addr =
+        (aw_order_q[aw_order_rd_ptr_q].addr >>
+         aw_order_q[aw_order_rd_ptr_q].size) <<
+        aw_order_q[aw_order_rd_ptr_q].size;
+    if ((aw_order_q[aw_order_rd_ptr_q].burst == 2'b01) &&
+        (active_w_beat_count_q != 0)) begin
+      active_w_addr = active_w_aligned_addr +
+          (AxiAddrWidth'(active_w_beat_count_q) <<
+           aw_order_q[aw_order_rd_ptr_q].size);
+    end
+    active_w_bytes = AxiAddrWidth'(1) <<
+        aw_order_q[aw_order_rd_ptr_q].size;
+    if ((active_w_beat_count_q == 0) ||
+        (aw_order_q[aw_order_rd_ptr_q].burst == 2'b00)) begin
+      active_w_bytes = active_w_bytes -
+          (active_w_addr - active_w_aligned_addr);
+    end
+    active_w_lane = DataByteOffsetWidth'(
+        active_w_addr & AxiAddrWidth'(DataBytes - 1));
+    active_w_size_error =
+        (AxiAddrWidth'(1) << aw_order_q[aw_order_rd_ptr_q].size) > DataBytes;
     active_w_legal_strb = '0;
-    for (int unsigned byte_idx = 0; byte_idx < AxiDataWidth / 8; byte_idx++) begin
-      if (byte_idx < (1 << aw_order_q[aw_order_rd_ptr_q].size)) begin
-        active_w_legal_strb[byte_idx] = 1'b1;
+    if (!active_w_size_error) begin
+      for (int unsigned byte_idx = 0; byte_idx < DataBytes; byte_idx++) begin
+        if ((byte_idx >= active_w_lane) &&
+            (byte_idx < active_w_lane + active_w_bytes)) begin
+          active_w_legal_strb[byte_idx] = 1'b1;
+        end
       end
     end
     local_wrap_read = s_axi_arburst == 2'b10;
@@ -177,7 +212,8 @@ module axi2chi_nocoh_slave #(
 
       if (aw_order_count_q != 0) begin
         if (aw_order_q[aw_order_rd_ptr_q].local_error) begin
-          s_axi_wready = 1'b1;
+          s_axi_wready = !active_w_expected_last || !local_b_valid_q ||
+              s_axi_bready;
         end else begin
           s_axi_wready = wr_beat_ready_i;
           wr_beat_valid_o = s_axi_wvalid;
@@ -185,7 +221,8 @@ module axi2chi_nocoh_slave #(
           wr_beat_data_o = s_axi_wdata;
           wr_beat_strb_o = s_axi_wstrb;
           wr_beat_last_o = s_axi_wlast;
-          wr_beat_error_o = (s_axi_wlast != active_w_expected_last) ||
+          wr_beat_error_o = active_w_size_error ||
+              (s_axi_wlast != active_w_expected_last) ||
               |(s_axi_wstrb & ~active_w_legal_strb);
         end
       end
@@ -244,6 +281,8 @@ module axi2chi_nocoh_slave #(
         aw_order_q[aw_order_wr_ptr_q].axi_id <= s_axi_awid;
         aw_order_q[aw_order_wr_ptr_q].len <= s_axi_awlen;
         aw_order_q[aw_order_wr_ptr_q].size <= s_axi_awsize;
+        aw_order_q[aw_order_wr_ptr_q].addr <= s_axi_awaddr;
+        aw_order_q[aw_order_wr_ptr_q].burst <= s_axi_awburst;
         if (aw_order_wr_ptr_q == ParentEntries - 1) begin
           aw_order_wr_ptr_q <= '0;
         end else begin
@@ -293,7 +332,8 @@ module axi2chi_nocoh_slave #(
         end
       end
 
-      if (local_b_fire) begin
+      if (local_b_fire &&
+          !(aw_order_pop && aw_order_q[aw_order_rd_ptr_q].local_error)) begin
         local_b_valid_q <= 1'b0;
       end
     end
@@ -325,6 +365,10 @@ module axi2chi_nocoh_slave #(
                 s_axi_bresp == b_resp_q)
         else $fatal(1, "AXI B payload changed while BREADY was low");
       end
+      assert (!(aw_order_pop &&
+                aw_order_q[aw_order_rd_ptr_q].local_error &&
+                local_b_valid_q && !local_b_fire))
+      else $fatal(1, "Local AXI B response slot overwritten");
 
       r_stall_q <= s_axi_rvalid && !s_axi_rready;
       r_id_q <= s_axi_rid;
